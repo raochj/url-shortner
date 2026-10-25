@@ -1,0 +1,20 @@
+# Build outputs
+backend/target/
+frontend/dist/
+frontend/node_modules/
+
+# Local verification toolchains and caches
+.tools/
+
+# IDE and operating-system files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local environment and logs
+.env
+.env.*
+!.env.example
+*.log

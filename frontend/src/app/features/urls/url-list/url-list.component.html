@@ -1,0 +1,279 @@
+<div class="page-layout">
+  <app-header></app-header>
+  <div class="body-layout">
+    <app-sidebar></app-sidebar>
+    <main class="page-body">
+      <!-- Page Header -->
+      <div class="page-header">
+        <div>
+          <h1>My URLs</h1>
+          <p>Manage and track all your shortened URLs.</p>
+        </div>
+        <a routerLink="/urls/new" class="btn-primary">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+          >
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          Create New URL
+        </a>
+      </div>
+      <!-- Table Card -->
+      <div class="card">
+        <div class="card-header">
+          <h3>Shortened URLs</h3>
+          <span class="results-count" *ngIf="!isLoading"
+            >{{ totalElements }} total</span
+          >
+        </div>
+        <!-- Loading -->
+        <div *ngIf="isLoading" class="loading-state">
+          <div class="spinner"></div>
+          <p>Loading URLs...</p>
+        </div>
+        <!-- Empty -->
+        <div *ngIf="!isLoading && urls.length === 0" class="empty-state">
+          <div class="empty-icon">🔗</div>
+          <h3>No URLs yet</h3>
+          <p>Create your first shortened URL to get started.</p>
+          <a routerLink="/urls/new" class="btn-primary"
+            >Create your first URL</a
+          >
+        </div>
+        <!-- Table -->
+        <div *ngIf="!isLoading && urls.length > 0" style="overflow-x: auto">
+          <table class="url-table">
+            <thead>
+              <tr>
+                <th>Short Code</th>
+                <th>Destination URL</th>
+                <th>Clicks</th>
+                <th>Status</th>
+                <th>Expires</th>
+                <th>Tags</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let url of urls">
+                <!-- Short Code -->
+                <td>
+                  <div class="short-code-cell">
+                    <span class="short-code-badge">{{ url.shortCode }}</span>
+                  </div>
+                </td>
+                <!-- Long URL -->
+                <td>
+                  <div class="long-url-cell">
+                    <a
+                      [href]="url.longUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      [title]="url.longUrl"
+                    >
+                      {{ url.longUrl }}
+                    </a>
+                  </div>
+                </td>
+                <!-- Clicks -->
+                <td>
+                  <span class="click-badge">{{ url.clickCount }}</span>
+                </td>
+                <!-- Status -->
+                <td>
+                  <span
+                    class="status-pill"
+                    [class.active]="url.isActive"
+                    [class.inactive]="!url.isActive"
+                  >
+                    {{ url.isActive ? "Active" : "Inactive" }}
+                  </span>
+                </td>
+                <!-- Expiry -->
+                <td>
+                  <span
+                    class="expiry-cell"
+                    [class.expiry-expired]="isExpired(url.expiresAt)"
+                  >
+                    {{ formatExpiry(url.expiresAt) }}
+                  </span>
+                </td>
+                <!-- Tags -->
+                <td>
+                  <div
+                    class="tags-cell"
+                    *ngIf="url.tags && url.tags.length > 0"
+                  >
+                    <span
+                      *ngFor="let tag of url.tags.slice(0, 2)"
+                      class="tag-pill"
+                      >{{ tag }}</span
+                    >
+                    <span *ngIf="url.tags.length > 2" class="tag-pill"
+                      >+{{ url.tags.length - 2 }}</span
+                    >
+                  </div>
+                  <span
+                    *ngIf="!url.tags || url.tags.length === 0"
+                    style="color: var(--color-text-light); font-size: 0.8125rem"
+                    >—</span
+                  >
+                </td>
+                <!-- Actions -->
+                <td>
+                  <div class="actions-cell">
+                    <!-- Copy -->
+                    <button
+                      class="action-btn info"
+                      (click)="copyShortUrl(url)"
+                      title="Copy short URL"
+                    >
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <rect
+                          x="9"
+                          y="9"
+                          width="13"
+                          height="13"
+                          rx="2"
+                          ry="2"
+                        />
+                        <path
+                          d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                        />
+                      </svg>
+                    </button>
+                    <!-- Analytics -->
+                    <button
+                      class="action-btn"
+                      (click)="goToAnalytics(url.shortCode)"
+                      title="View analytics"
+                    >
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <line x1="18" y1="20" x2="18" y2="10" />
+                        <line x1="12" y1="20" x2="12" y2="4" />
+                        <line x1="6" y1="20" x2="6" y2="14" />
+                      </svg>
+                    </button>
+                    <!-- Toggle Active -->
+                    <button
+                      class="action-btn"
+                      [class.success-btn]="!url.isActive"
+                      [class.danger]="url.isActive"
+                      (click)="toggleActive(url)"
+                      [title]="url.isActive ? 'Deactivate' : 'Activate'"
+                    >
+                      <svg
+                        *ngIf="url.isActive"
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                      </svg>
+                      <svg
+                        *ngIf="!url.isActive"
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <polyline points="22 4 12 14.01 9 11.01" />
+                      </svg>
+                    </button>
+                    <!-- Delete -->
+                    <button
+                      class="action-btn danger"
+                      (click)="deleteUrl(url.shortCode)"
+                      [disabled]="deletingCode === url.shortCode"
+                      title="Delete URL"
+                    >
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <polyline points="3 6 5 6 21 6" />
+                        <path
+                          d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- Pagination -->
+        <div
+          *ngIf="!isLoading && urls.length > 0 && totalPages > 1"
+          class="pagination"
+        >
+          <span class="pagination-info">
+            Showing {{ startItem }}–{{ endItem }} of {{ totalElements }}
+          </span>
+          <div class="pagination-controls">
+            <button
+              class="page-btn"
+              (click)="prevPage()"
+              [disabled]="currentPage === 0"
+            >
+              ← Previous
+            </button>
+            <button
+              *ngFor="let p of pagesArray"
+              class="page-btn"
+              [style.background]="p === currentPage ? 'var(--color-navy)' : ''"
+              [style.color]="p === currentPage ? 'white' : ''"
+              [style.border-color]="
+                p === currentPage ? 'var(--color-navy)' : ''
+              "
+              (click)="goToPage(p)"
+            >
+              {{ p + 1 }}
+            </button>
+            <button
+              class="page-btn"
+              (click)="nextPage()"
+              [disabled]="currentPage >= totalPages - 1"
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<!-- Copy feedback toast -->
+<div *ngIf="copyFeedback" class="copy-feedback">✓ Copied to clipboard!</div>

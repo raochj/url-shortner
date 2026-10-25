@@ -1,0 +1,175 @@
+<div class="dag-container">
+  <div class="dag-header">
+    <h3>Task DAG — Execution Graph</h3>
+    <span style="font-size: 0.8125rem; color: rgba(255, 255, 255, 0.65)">
+      {{ layoutNodes.length }} nodes
+    </span>
+  </div>
+  @if (layoutNodes.length === 0) {
+    <div class="empty-dag">
+      No task graph available yet. Start a run to see the DAG.
+    </div>
+  }
+  @if (layoutNodes.length > 0) {
+    <div class="dag-scroll">
+      <svg [attr.width]="svgWidth" [attr.height]="svgHeight" class="dag-svg">
+        <!-- Arrowhead marker -->
+        <defs>
+          <marker
+            id="arrowhead"
+            markerWidth="10"
+            markerHeight="7"
+            refX="9"
+            refY="3.5"
+            orient="auto"
+          >
+            <polygon points="0 0, 10 3.5, 0 7" fill="#4A5568" />
+          </marker>
+        </defs>
+        <!-- Stage column background bands -->
+        @for (col of stageColumns; track col.name; let i = $index) {
+          <rect
+            [attr.x]="col.x - 80"
+            y="0"
+            width="160"
+            [attr.height]="svgHeight"
+            [attr.fill]="i % 2 === 0 ? 'rgba(0,48,87,0.02)' : 'transparent'"
+            rx="0"
+          />
+        }
+        <!-- Stage labels -->
+        @for (col of stageColumns; track col.name) {
+          <text
+            [attr.x]="col.x"
+            y="22"
+            text-anchor="middle"
+            class="stage-label-text"
+          >
+            {{ col.name }}
+          </text>
+        }
+        <!-- Stage separator lines (skip first column) -->
+        @for (col of stageColumns; track col.name; let i = $index) {
+          @if (i > 0) {
+            <line
+              [attr.x1]="col.x - 80"
+              y1="0"
+              [attr.x2]="col.x - 80"
+              [attr.y2]="svgHeight"
+              stroke="#E2E8F0"
+              stroke-width="1"
+              stroke-dasharray="4 4"
+            />
+          }
+        }
+        <!-- Edges -->
+        @for (edge of layoutEdges; track edge.source + edge.target) {
+          <path
+            [attr.d]="edge.path"
+            stroke="#CBD5E0"
+            stroke-width="1.5"
+            fill="none"
+            marker-end="url(#arrowhead)"
+            opacity="0.8"
+          />
+        }
+        <!-- Nodes -->
+        @for (node of layoutNodes; track node.id) {
+          <g class="clickable">
+            <!-- Node rect -->
+            <rect
+              [attr.x]="node.x - 70"
+              [attr.y]="node.y - 25"
+              width="140"
+              height="50"
+              [attr.fill]="getNodeColor(node.status)"
+              [attr.stroke]="getNodeBorderColor(node.status)"
+              stroke-width="2"
+              rx="6"
+            />
+            <!-- Status Icon + Task ID -->
+            <text
+              [attr.x]="node.x"
+              [attr.y]="node.y - 7"
+              text-anchor="middle"
+              class="node-id-text"
+              [attr.fill]="getNodeTextColor(node.status)"
+            >
+              {{ getStatusIcon(node.status) }} {{ node.id | slice: 0 : 14 }}
+            </text>
+            <!-- Task Name -->
+            <text
+              [attr.x]="node.x"
+              [attr.y]="node.y + 9"
+              text-anchor="middle"
+              class="node-name-text"
+              [attr.fill]="getNodeTextColor(node.status)"
+              opacity="0.85"
+            >
+              {{ node.name | slice: 0 : 18 }}
+            </text>
+            <!-- Approval badge (shown for AWAITING_APPROVAL) -->
+            @if (node.status === "AWAITING_APPROVAL") {
+              <circle
+                [attr.cx]="node.x + 63"
+                [attr.cy]="node.y - 22"
+                r="9"
+                fill="#E65100"
+                stroke="white"
+                stroke-width="1.5"
+              />
+              <text
+                [attr.x]="node.x + 63"
+                [attr.y]="node.y - 18"
+                text-anchor="middle"
+                class="approval-badge-text"
+              >
+                !
+              </text>
+            }
+            <!-- Pulsing ring for IN_PROGRESS -->
+            @if (node.status === "IN_PROGRESS") {
+              <circle
+                [attr.cx]="node.x"
+                [attr.cy]="node.y"
+                r="32"
+                fill="none"
+                stroke="#0277BD"
+                stroke-width="1"
+                opacity="0.3"
+              />
+            }
+          </g>
+        }
+      </svg>
+    </div>
+    <!-- Stage progress pills -->
+    @if (stageProgressKeys.length > 0) {
+      <div class="stage-progress">
+        @for (stage of stageProgressKeys; track stage) {
+          <div class="stage-pill" [class.all-done]="isStageAllDone(stage)">
+            <span class="stage-name">{{ stage }}</span>
+            <span class="stage-count">
+              {{ getCompletedCountForStage(stage) }}/{{
+                tasksByStage[stage].length
+              }}
+            </span>
+          </div>
+        }
+      </div>
+    }
+    <!-- Legend -->
+    <div class="dag-legend">
+      @for (item of legendItems; track item.label) {
+        <div class="legend-item">
+          <div
+            class="legend-dot"
+            [style.background]="item.color"
+            style="border: 1.5px solid rgba(0, 0, 0, 0.1)"
+          ></div>
+          {{ item.label }}
+        </div>
+      }
+    </div>
+  }
+</div>

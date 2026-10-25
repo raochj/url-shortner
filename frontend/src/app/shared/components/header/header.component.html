@@ -1,0 +1,43 @@
+<header class="header">
+  <!-- Brand -->
+  <a routerLink="/dashboard" class="header-brand">
+    <div class="brand-logo">S</div>
+    <div class="brand-text">
+      <span class="brand-name">Schwab</span>
+      <span class="brand-subtitle">URL Shortener</span>
+    </div>
+  </a>
+  <div class="header-spacer"></div>
+  <!-- Right side -->
+  <div class="header-actions">
+    <div *ngIf="currentUser" class="user-info">
+      <div class="user-avatar">{{ getInitials(currentUser.username) }}</div>
+      <div class="user-details">
+        <span class="user-name">{{ currentUser.username }}</span>
+        <span
+          class="user-role"
+          [class.role-admin]="authService.isAdmin()"
+          [class.role-user]="!authService.isAdmin()"
+        >
+          {{ currentUser.role | uppercase }}
+        </span>
+      </div>
+    </div>
+    <div class="header-divider"></div>
+    <button class="btn-logout" (click)="logout()">
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+        <polyline points="16 17 21 12 16 7" />
+        <line x1="21" y1="12" x2="9" y2="12" />
+      </svg>
+      Sign Out
+    </button>
+  </div>
+</header>

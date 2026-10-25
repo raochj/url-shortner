@@ -1,0 +1,111 @@
+<div class="task-card">
+  <!-- Header (always visible) -->
+  <div class="task-card-header" (click)="toggleExpanded()">
+    <div class="task-status-dot" [class]="getStatusDotClass(task.status)"></div>
+    <div class="task-info">
+      <div class="task-name" [title]="task.name">{{ task.name }}</div>
+      <div class="task-meta">
+        <span class="stage-badge">{{ task.stage }}</span>
+        <span class="status-badge" [class]="task.status">{{
+          task.status | titlecase
+        }}</span>
+        <span *ngIf="task.latencyMs" class="latency-badge">{{
+          formatLatency(task.latencyMs)
+        }}</span>
+        <span *ngIf="task.attemptNumber > 1" class="attempt-badge"
+          >Attempt #{{ task.attemptNumber }}</span
+        >
+        <span
+          *ngIf="task.requiresApproval"
+          class="status-badge AWAITING_APPROVAL"
+          >Requires Approval</span
+        >
+      </div>
+    </div>
+    <svg
+      class="expand-icon"
+      [class.expanded]="expanded"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  </div>
+  <!-- Expanded Detail -->
+  <div *ngIf="expanded" class="task-detail">
+    <!-- Description -->
+    <div class="detail-field" *ngIf="task.description">
+      <div class="detail-label">Description</div>
+      <div class="detail-value">{{ task.description }}</div>
+    </div>
+    <!-- Task ID -->
+    <div class="detail-field">
+      <div class="detail-label">Task ID</div>
+      <div
+        class="detail-value"
+        style="font-family: var(--font-mono); font-size: 0.8125rem"
+      >
+        {{ task.taskId }}
+      </div>
+    </div>
+    <!-- Dependencies -->
+    <div
+      class="detail-field"
+      *ngIf="task.dependencies && task.dependencies.length > 0"
+    >
+      <div class="detail-label">Dependencies</div>
+      <div class="deps-list">
+        <span *ngFor="let dep of task.dependencies" class="dep-chip">{{
+          dep
+        }}</span>
+      </div>
+    </div>
+    <!-- Error Detail -->
+    <div class="detail-field" *ngIf="task.errorDetail">
+      <div class="detail-label">Error</div>
+      <div class="error-detail">{{ task.errorDetail }}</div>
+    </div>
+    <!-- Approval Prompt -->
+    <div class="detail-field" *ngIf="task.approvalPrompt">
+      <div class="detail-label">Approval Required</div>
+      <div class="approval-prompt">{{ task.approvalPrompt }}</div>
+    </div>
+    <!-- Approval Buttons -->
+    <div
+      *ngIf="task.status === 'AWAITING_APPROVAL' && showApprovalButtons"
+      class="approval-actions"
+    >
+      <button class="btn-approve" (click)="onApprove()">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+        Approve
+      </button>
+      <button class="btn-reject" (click)="onReject()">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+        Reject
+      </button>
+    </div>
+  </div>
+</div>

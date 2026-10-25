@@ -1,0 +1,363 @@
+<div class="page-layout">
+  <app-header></app-header>
+  <div class="body-layout">
+    <app-sidebar [currentShortCode]="shortCode"></app-sidebar>
+    <main class="page-body">
+      <!-- Page Header -->
+      <div class="page-header">
+        <div>
+          <h1>Analytics</h1>
+          <p>Click and traffic data for your shortened URL.</p>
+        </div>
+        <div
+          style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap"
+        >
+          <span class="short-code-tag">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
+              />
+              <path
+                d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
+              />
+            </svg>
+            {{ shortCode }}
+          </span>
+          <a routerLink="/urls" class="btn-back">← Back to URLs</a>
+        </div>
+      </div>
+      <!-- Loading -->
+      <div *ngIf="isLoading" class="loading-state">
+        <div class="spinner"></div>
+        <p>Loading analytics...</p>
+      </div>
+      <!-- Error -->
+      <div *ngIf="!isLoading && errorMessage" class="error-state">
+        <h3>Could not load analytics</h3>
+        <p>{{ errorMessage }}</p>
+        <button
+          (click)="loadSummary()"
+          style="
+            margin-top: 1rem;
+            padding: 0.5rem 1.25rem;
+            background: var(--color-navy);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+          "
+        >
+          Retry
+        </button>
+      </div>
+      <ng-container *ngIf="!isLoading && !errorMessage && summary">
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Total Clicks</div>
+            <div class="stat-value">{{ summary.totalClicks | number }}</div>
+            <div class="stat-sub">All time</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Countries</div>
+            <div class="stat-value">{{ summary.uniqueCountries }}</div>
+            <div class="stat-sub">Unique countries</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Devices</div>
+            <div class="stat-value">
+              {{ getTopEntries(summary.clicksByDevice, 1)[0]?.key || "—" }}
+            </div>
+            <div class="stat-sub">Top device type</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Top Browser</div>
+            <div class="stat-value" style="font-size: 1.25rem">
+              {{ getTopEntries(summary.clicksByBrowser, 1)[0]?.key || "—" }}
+            </div>
+            <div class="stat-sub">Most common</div>
+          </div>
+        </div>
+        <!-- Charts Row -->
+        <div class="charts-row">
+          <!-- Clicks Over Time Chart -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Clicks Over Time</h3>
+              <span class="subtitle"
+                >{{ totalClicksByDateEntries }} days of data</span
+              >
+            </div>
+            <div
+              *ngIf="!summary.clicksByDate || totalClicksByDateEntries === 0"
+              class="chart-empty"
+            >
+              No click data available yet.
+            </div>
+            <div
+              *ngIf="summary.clicksByDate && totalClicksByDateEntries > 0"
+              class="chart-container"
+            >
+              <svg
+                class="chart-svg"
+                [attr.width]="getSvgWidth(summary.clicksByDate)"
+                [attr.height]="CHART_HEIGHT"
+                [attr.viewBox]="
+                  '0 0 ' +
+                  getSvgWidth(summary.clicksByDate) +
+                  ' ' +
+                  CHART_HEIGHT
+                "
+              >
+                <!-- Y-axis line -->
+                <line
+                  [attr.x1]="PADDING_LEFT - 5"
+                  y1="15"
+                  [attr.x2]="PADDING_LEFT - 5"
+                  [attr.y2]="CHART_HEIGHT - PADDING_BOTTOM"
+                  stroke="#E2E8F0"
+                  stroke-width="1"
+                />
+                <!-- X-axis line -->
+                <line
+                  [attr.x1]="PADDING_LEFT - 5"
+                  [attr.y1]="CHART_HEIGHT - PADDING_BOTTOM"
+                  [attr.x2]="getSvgWidth(summary.clicksByDate) - 10"
+                  [attr.y2]="CHART_HEIGHT - PADDING_BOTTOM"
+                  stroke="#E2E8F0"
+                  stroke-width="1"
+                />
+                <!-- Bars -->
+                <g *ngFor="let bar of buildSvgBars(summary.clicksByDate)">
+                  <rect
+                    [attr.x]="bar.x"
+                    [attr.y]="bar.y"
+                    [attr.width]="bar.width"
+                    [attr.height]="bar.height"
+                    fill="var(--color-navy)"
+                    rx="3"
+                    opacity="0.85"
+                  />
+                  <!-- Count label on top of bar -->
+                  <text
+                    *ngIf="bar.height > 18"
+                    [attr.x]="bar.x + bar.width / 2"
+                    [attr.y]="bar.y - 3"
+                    text-anchor="middle"
+                    class="bar-value-label"
+                  >
+                    {{ bar.count }}
+                  </text>
+                  <!-- Date label below bar -->
+                  <text
+                    [attr.x]="bar.x + bar.width / 2"
+                    [attr.y]="CHART_HEIGHT - PADDING_BOTTOM + 14"
+                    text-anchor="middle"
+                    class="bar-label"
+                    [attr.transform]="
+                      'rotate(-25, ' +
+                      (bar.x + bar.width / 2) +
+                      ', ' +
+                      (CHART_HEIGHT - PADDING_BOTTOM + 14) +
+                      ')'
+                    "
+                  >
+                    {{ bar.date }}
+                  </text>
+                </g>
+              </svg>
+            </div>
+          </div>
+          <!-- Top Countries -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Top Countries</h3>
+            </div>
+            <div class="card-body" style="padding: 0.75rem 0">
+              <div
+                *ngIf="getTopEntries(summary.clicksByCountry).length === 0"
+                style="
+                  text-align: center;
+                  padding: 2rem;
+                  color: var(--color-text-muted);
+                  font-size: 0.9rem;
+                "
+              >
+                No geographic data yet.
+              </div>
+              <table
+                *ngIf="getTopEntries(summary.clicksByCountry).length > 0"
+                class="breakdown-table"
+              >
+                <tbody>
+                  <tr
+                    *ngFor="
+                      let entry of getTopEntries(summary.clicksByCountry, 8)
+                    "
+                  >
+                    <td style="width: 50%">
+                      <span class="breakdown-name">{{
+                        entry.key || "Unknown"
+                      }}</span>
+                    </td>
+                    <td>
+                      <div class="breakdown-bar-wrap">
+                        <div class="breakdown-bar-bg">
+                          <div
+                            class="breakdown-bar-fill"
+                            [style.width.%]="
+                              getBarWidthPct(
+                                entry.value,
+                                summary.clicksByCountry
+                              )
+                            "
+                          ></div>
+                        </div>
+                        <span class="breakdown-count">{{ entry.value }}</span>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <!-- Breakdown Row -->
+        <div class="breakdown-row">
+          <!-- Devices -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Device Types</h3>
+            </div>
+            <div class="card-body">
+              <div
+                *ngIf="getTopEntries(summary.clicksByDevice).length === 0"
+                style="
+                  text-align: center;
+                  padding: 1.5rem;
+                  color: var(--color-text-muted);
+                  font-size: 0.9rem;
+                "
+              >
+                No device data yet.
+              </div>
+              <div
+                *ngFor="let entry of getTopEntries(summary.clicksByDevice, 6)"
+                class="device-item"
+              >
+                <div class="device-icon">
+                  <svg
+                    *ngIf="entry.key === 'Mobile'"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+                    <line x1="12" y1="18" x2="12.01" y2="18" />
+                  </svg>
+                  <svg
+                    *ngIf="entry.key === 'Desktop'"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                    <line x1="8" y1="21" x2="16" y2="21" />
+                    <line x1="12" y1="17" x2="12" y2="21" />
+                  </svg>
+                  <svg
+                    *ngIf="entry.key !== 'Mobile' && entry.key !== 'Desktop'"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                  </svg>
+                </div>
+                <div class="device-info">
+                  <div class="device-name">{{ entry.key || "Unknown" }}</div>
+                  <div class="device-pct">
+                    {{ getBarWidthPct(entry.value, summary.clicksByDevice) }}%
+                    of clicks
+                  </div>
+                </div>
+                <span class="breakdown-count">{{ entry.value }}</span>
+              </div>
+            </div>
+          </div>
+          <!-- Browsers -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Browsers</h3>
+            </div>
+            <div class="card-body" style="padding: 0.75rem 0">
+              <div
+                *ngIf="getTopEntries(summary.clicksByBrowser).length === 0"
+                style="
+                  text-align: center;
+                  padding: 2rem;
+                  color: var(--color-text-muted);
+                  font-size: 0.9rem;
+                "
+              >
+                No browser data yet.
+              </div>
+              <table
+                *ngIf="getTopEntries(summary.clicksByBrowser).length > 0"
+                class="breakdown-table"
+              >
+                <tbody>
+                  <tr
+                    *ngFor="
+                      let entry of getTopEntries(summary.clicksByBrowser, 8)
+                    "
+                  >
+                    <td style="width: 50%">
+                      <span class="breakdown-name">{{
+                        entry.key || "Unknown"
+                      }}</span>
+                    </td>
+                    <td>
+                      <div class="breakdown-bar-wrap">
+                        <div class="breakdown-bar-bg">
+                          <div
+                            class="breakdown-bar-fill"
+                            [style.width.%]="
+                              getBarWidthPct(
+                                entry.value,
+                                summary.clicksByBrowser
+                              )
+                            "
+                            style="background: var(--color-blue)"
+                          ></div>
+                        </div>
+                        <span class="breakdown-count">{{ entry.value }}</span>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+    </main>
+  </div>
+</div>

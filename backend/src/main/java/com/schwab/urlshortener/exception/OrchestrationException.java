@@ -1,0 +1,11 @@
+package com.schwab.urlshortener.exception;
+
+public class OrchestrationException extends RuntimeException {
+  public OrchestrationException(String message) {
+    super(message);
+  }
+
+  public OrchestrationException(String message, Throwable cause) {
+    super(message, cause);
+  }
+}

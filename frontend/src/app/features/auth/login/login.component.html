@@ -1,0 +1,97 @@
+<div class="login-wrapper">
+  <!-- Brand -->
+  <div class="login-brand">
+    <div class="brand-logo-large">S</div>
+    <h1 class="brand-title">Schwab</h1>
+    <p class="brand-tagline">URL Shortener Platform</p>
+  </div>
+  <!-- Session expired banner -->
+  <div *ngIf="sessionExpired" class="session-expired-banner">
+    Your session has expired. Please sign in again.
+  </div>
+  <!-- Card -->
+  <div class="login-card">
+    <div class="login-card-header">
+      <h2>Sign In</h2>
+      <p>Enter your credentials to access the platform</p>
+    </div>
+    <div class="login-card-body">
+      <!-- Error Alert -->
+      <div *ngIf="errorMessage" class="alert-error">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          style="flex-shrink: 0; margin-top: 1px"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        {{ errorMessage }}
+      </div>
+      <form [formGroup]="loginForm" (ngSubmit)="submit()" novalidate>
+        <!-- Username -->
+        <div class="form-group">
+          <label class="form-label" for="username">Username</label>
+          <input
+            id="username"
+            type="text"
+            class="form-control"
+            [class.is-invalid]="username?.invalid && username?.touched"
+            formControlName="username"
+            placeholder="Enter your username"
+            autocomplete="username"
+            autocapitalize="none"
+          />
+          <div
+            *ngIf="username?.invalid && username?.touched"
+            class="field-error"
+          >
+            <span *ngIf="username?.errors?.['required']"
+              >Username is required.</span
+            >
+            <span *ngIf="username?.errors?.['minlength']"
+              >Username must be at least 3 characters.</span
+            >
+          </div>
+        </div>
+        <!-- Password -->
+        <div class="form-group">
+          <label class="form-label" for="password">Password</label>
+          <input
+            id="password"
+            type="password"
+            class="form-control"
+            [class.is-invalid]="password?.invalid && password?.touched"
+            formControlName="password"
+            placeholder="Enter your password"
+            autocomplete="current-password"
+          />
+          <div
+            *ngIf="password?.invalid && password?.touched"
+            class="field-error"
+          >
+            <span *ngIf="password?.errors?.['required']"
+              >Password is required.</span
+            >
+            <span *ngIf="password?.errors?.['minlength']"
+              >Password must be at least 6 characters.</span
+            >
+          </div>
+        </div>
+        <!-- Submit -->
+        <button type="submit" class="btn-submit" [disabled]="isLoading">
+          <div *ngIf="isLoading" class="spinner-sm"></div>
+          <span>{{ isLoading ? "Signing in..." : "Sign In" }}</span>
+        </button>
+      </form>
+    </div>
+    <div class="login-card-footer">
+      Don't have an account? <a routerLink="/register">Create one</a>
+    </div>
+  </div>
+</div>

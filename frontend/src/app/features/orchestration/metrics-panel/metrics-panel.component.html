@@ -1,0 +1,130 @@
+<div *ngIf="metrics" class="metrics-panel">
+  <div class="panel-header">
+    <h3>Reliability Metrics</h3>
+  </div>
+  <div class="panel-body">
+    <!-- Task Progress Bar -->
+    <div class="task-progress">
+      <div class="progress-header">
+        <span>Task Progress</span>
+        <span
+          >{{ metrics.completedTasks + metrics.failedTasks }} /
+          {{ metrics.totalTasks }}</span
+        >
+      </div>
+      <div class="progress-bar">
+        <div
+          class="progress-segment completed"
+          [style.width.%]="getCompletedWidthPct()"
+        ></div>
+        <div
+          class="progress-segment failed"
+          [style.width.%]="getFailedWidthPct()"
+        ></div>
+        <div
+          class="progress-segment rolled-back"
+          [style.width.%]="getRolledBackWidthPct()"
+        ></div>
+      </div>
+    </div>
+    <!-- Success Rate Ring -->
+    <div class="rate-section">
+      <div class="ring-container">
+        <svg class="ring-svg" width="88" height="88" viewBox="0 0 88 88">
+          <circle class="ring-bg" cx="44" cy="44" [attr.r]="RING_RADIUS" />
+          <circle
+            class="ring-fill"
+            cx="44"
+            cy="44"
+            [attr.r]="RING_RADIUS"
+            [attr.stroke]="getRingColor()"
+            [attr.stroke-dasharray]="getRingDashArray()"
+          />
+        </svg>
+        <div class="ring-text">
+          <span class="ring-value" [class]="getSuccessRateClass()">
+            {{ metrics.successRate | number: "1.0-0" }}%
+          </span>
+          <span class="ring-label">success</span>
+        </div>
+      </div>
+      <div class="rate-info">
+        <h4>Pipeline Health</h4>
+        <p>
+          {{ metrics.completedTasks }} completed,
+          {{ metrics.failedTasks }} failed, {{ metrics.rolledBackTasks }} rolled
+          back out of {{ metrics.totalTasks }} total tasks.
+        </p>
+      </div>
+    </div>
+    <!-- Metrics Grid -->
+    <div class="metrics-grid">
+      <!-- Total Elapsed -->
+      <div class="metric-item">
+        <div class="metric-label">Total Elapsed</div>
+        <div class="metric-value">{{ formatMs(metrics.totalElapsedMs) }}</div>
+        <div class="metric-sub">end-to-end</div>
+      </div>
+      <!-- MTTR -->
+      <div
+        class="metric-item"
+        [class.warning]="metrics.meanTimeToRecoverMs > 0"
+      >
+        <div class="metric-label">MTTR</div>
+        <div class="metric-value">
+          {{ formatMs(metrics.meanTimeToRecoverMs) }}
+        </div>
+        <div class="metric-sub">mean time to recover</div>
+      </div>
+      <!-- Retries -->
+      <div class="metric-item" [class.warning]="metrics.retryCount > 0">
+        <div class="metric-label">Retries</div>
+        <div class="metric-value">{{ metrics.retryCount }}</div>
+        <div class="metric-sub">bounded retry attempts</div>
+      </div>
+      <!-- Rollback Rate -->
+      <div class="metric-item" [class.warning]="metrics.rollbackRate > 0">
+        <div class="metric-label">Rollback Rate</div>
+        <div class="metric-value">
+          {{ metrics.rollbackRate | number: "1.0-1" }}%
+        </div>
+        <div class="metric-sub">tasks rolled back</div>
+      </div>
+      <!-- P50 Latency -->
+      <div class="metric-item">
+        <div class="metric-label">P50 Latency</div>
+        <div class="metric-value">{{ formatMs(metrics.p50LatencyMs) }}</div>
+        <div class="metric-sub">median task time</div>
+      </div>
+      <!-- P95 Latency -->
+      <div class="metric-item">
+        <div class="metric-label">P95 Latency</div>
+        <div class="metric-value">{{ formatMs(metrics.p95LatencyMs) }}</div>
+        <div class="metric-sub">95th percentile</div>
+      </div>
+      <!-- Approvals Pending -->
+      <div class="metric-item" [class.warning]="metrics.approvalsPending > 0">
+        <div class="metric-label">Approvals Pending</div>
+        <div class="metric-value">{{ metrics.approvalsPending }}</div>
+        <div class="metric-sub">awaiting decision</div>
+      </div>
+      <!-- Approvals Granted -->
+      <div class="metric-item" [class.success]="metrics.approvalsGranted > 0">
+        <div class="metric-label">Approvals Granted</div>
+        <div class="metric-value">{{ metrics.approvalsGranted }}</div>
+        <div class="metric-sub">human-approved</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div
+  *ngIf="!metrics"
+  style="
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+  "
+>
+  Metrics will appear once the run starts.
+</div>

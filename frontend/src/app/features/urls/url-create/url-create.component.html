@@ -1,0 +1,297 @@
+<div class="page-layout">
+  <app-header></app-header>
+  <div class="body-layout">
+    <app-sidebar></app-sidebar>
+    <main class="page-body">
+      <!-- Page Header -->
+      <div class="page-header">
+        <h1>Create Short URL</h1>
+        <p>
+          Shorten a long URL with optional custom alias, expiration, and tags.
+        </p>
+      </div>
+      <!-- Success Result Card -->
+      <div *ngIf="createdUrl" class="success-card">
+        <div class="success-card-header">
+          <div class="success-icon">
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="white"
+              stroke-width="2.5"
+            >
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </div>
+          <div>
+            <h3>Short URL Created!</h3>
+            <p>Your URL has been shortened successfully.</p>
+          </div>
+        </div>
+        <div class="success-card-body">
+          <!-- Short URL Display -->
+          <div class="short-url-display">
+            <span class="short-url-text">{{ createdUrl.shortUrl }}</span>
+            <button
+              class="btn-copy"
+              [class.copied]="copied"
+              (click)="copyUrl()"
+            >
+              <svg
+                *ngIf="!copied"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path
+                  d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                />
+              </svg>
+              {{ copied ? "✓ Copied!" : "Copy" }}
+            </button>
+          </div>
+          <!-- Result Meta -->
+          <div class="result-meta">
+            <div class="meta-item">
+              <div class="meta-label">Short Code</div>
+              <div class="meta-value" style="font-family: var(--font-mono)">
+                {{ createdUrl.shortCode }}
+              </div>
+            </div>
+            <div class="meta-item" *ngIf="createdUrl.customAlias">
+              <div class="meta-label">Custom Alias</div>
+              <div class="meta-value">{{ createdUrl.customAlias }}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Expires</div>
+              <div class="meta-value">
+                {{
+                  createdUrl.expiresAt
+                    ? (createdUrl.expiresAt | date: "mediumDate")
+                    : "Never"
+                }}
+              </div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Created</div>
+              <div class="meta-value">
+                {{ createdUrl.createdAt | date: "mediumDate" }}
+              </div>
+            </div>
+          </div>
+          <!-- Actions -->
+          <div class="result-actions">
+            <button class="btn-secondary" (click)="goToAnalytics()">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="20" x2="18" y2="10" />
+                <line x1="12" y1="20" x2="12" y2="4" />
+                <line x1="6" y1="20" x2="6" y2="14" />
+              </svg>
+              View Analytics
+            </button>
+            <button class="btn-ghost" (click)="createAnother()">
+              Create Another URL
+            </button>
+            <a routerLink="/urls" class="btn-ghost"> View All URLs </a>
+          </div>
+        </div>
+      </div>
+      <!-- Creation Form -->
+      <div *ngIf="!createdUrl" class="card">
+        <div class="card-header">
+          <h2>URL Details</h2>
+          <p>Fill in the form below to create your short URL</p>
+        </div>
+        <div class="card-body">
+          <!-- Error Alert -->
+          <div *ngIf="errorMessage" class="alert-error">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              style="flex-shrink: 0; margin-top: 1px"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            {{ errorMessage }}
+          </div>
+          <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+            <!-- Long URL -->
+            <div class="form-group">
+              <label class="form-label" for="longUrl">
+                Destination URL <span class="required"></span>
+              </label>
+              <input
+                id="longUrl"
+                type="url"
+                class="form-control"
+                [class.is-invalid]="longUrl?.invalid && longUrl?.touched"
+                formControlName="longUrl"
+                placeholder="https://www.example.com/your/very/long/url"
+                autocomplete="off"
+              />
+              <div
+                *ngIf="longUrl?.invalid && longUrl?.touched"
+                class="field-error"
+              >
+                <span *ngIf="longUrl?.errors?.['required']"
+                  >Destination URL is required.</span
+                >
+                <span *ngIf="longUrl?.errors?.['invalidUrl']"
+                  >Please enter a valid URL starting with http:// or
+                  https://</span
+                >
+              </div>
+              <span class="form-hint"
+                >The full URL you want to shorten. Must start with http:// or
+                https://</span
+              >
+            </div>
+            <!-- Alias + Expiration Row -->
+            <div class="form-row">
+              <!-- Custom Alias -->
+              <div class="form-group">
+                <label class="form-label" for="customAlias">
+                  Custom Alias <span class="optional">(optional)</span>
+                </label>
+                <input
+                  id="customAlias"
+                  type="text"
+                  class="form-control"
+                  [class.is-invalid]="
+                    customAlias?.invalid && customAlias?.touched
+                  "
+                  formControlName="customAlias"
+                  placeholder="my-custom-link"
+                  autocomplete="off"
+                  autocapitalize="none"
+                />
+                <div
+                  *ngIf="customAlias?.invalid && customAlias?.touched"
+                  class="field-error"
+                >
+                  <span *ngIf="customAlias?.errors?.['invalidAlias']"
+                    >Only letters, numbers, hyphens, and underscores
+                    allowed.</span
+                  >
+                  <span *ngIf="customAlias?.errors?.['minlength']"
+                    >Alias must be at least 3 characters.</span
+                  >
+                  <span *ngIf="customAlias?.errors?.['maxlength']"
+                    >Alias cannot exceed 50 characters.</span
+                  >
+                </div>
+                <span class="form-hint">e.g. "my-link" → /my-link</span>
+              </div>
+              <!-- Expiration Days -->
+              <div class="form-group">
+                <label class="form-label" for="expirationDays">
+                  Expiration <span class="optional">(optional)</span>
+                </label>
+                <input
+                  id="expirationDays"
+                  type="number"
+                  class="form-control"
+                  [class.is-invalid]="
+                    expirationDays?.invalid && expirationDays?.touched
+                  "
+                  formControlName="expirationDays"
+                  placeholder="Number of days"
+                  min="1"
+                  max="3650"
+                />
+                <div
+                  *ngIf="expirationDays?.invalid && expirationDays?.touched"
+                  class="field-error"
+                >
+                  <span *ngIf="expirationDays?.errors?.['min']"
+                    >Must be at least 1 day.</span
+                  >
+                  <span *ngIf="expirationDays?.errors?.['max']"
+                    >Cannot exceed 3650 days (10 years).</span
+                  >
+                </div>
+                <span class="form-hint"
+                  >Days until link expires. Leave blank for no expiry.</span
+                >
+              </div>
+            </div>
+            <!-- Tags -->
+            <div class="form-group">
+              <label class="form-label">
+                Tags <span class="optional">(optional)</span>
+              </label>
+              <div class="tags-input-wrap">
+                <input
+                  type="text"
+                  class="form-control"
+                  formControlName="tagInput"
+                  placeholder="Type a tag and press Enter or comma"
+                  (keydown)="onTagKeydown($event)"
+                  maxlength="30"
+                />
+              </div>
+              <div class="tags-display" *ngIf="currentTags.length > 0">
+                <span *ngFor="let tag of currentTags" class="tag-chip">
+                  {{ tag }}
+                  <button
+                    type="button"
+                    (click)="removeTag(tag)"
+                    aria-label="Remove tag"
+                  >
+                    ×
+                  </button>
+                </span>
+              </div>
+              <span class="form-hint"
+                >Press Enter or comma to add a tag. Maximum 10 tags.</span
+              >
+            </div>
+            <!-- Actions -->
+            <div class="form-actions">
+              <button type="submit" class="btn-primary" [disabled]="isLoading">
+                <div *ngIf="isLoading" class="spinner-sm"></div>
+                <svg
+                  *ngIf="!isLoading"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                >
+                  <path
+                    d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
+                  />
+                  <path
+                    d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
+                  />
+                </svg>
+                {{ isLoading ? "Creating..." : "Create Short URL" }}
+              </button>
+              <a routerLink="/urls" class="btn-outline">Cancel</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>

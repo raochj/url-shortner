@@ -1,0 +1,253 @@
+<div class="page-layout">
+  <app-header></app-header>
+  <div class="body-layout">
+    <app-sidebar></app-sidebar>
+    <main class="page-body">
+      <!-- Page Header -->
+      <div class="page-header">
+        <h1>Dashboard</h1>
+        <p>Welcome back — here's an overview of your URL shortener activity.</p>
+      </div>
+      <!-- Stats Grid -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon navy">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
+              />
+              <path
+                d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
+              />
+            </svg>
+          </div>
+          <div class="stat-content">
+            <div class="stat-value">{{ totalUrls }}</div>
+            <div class="stat-label">Total URLs</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+            </svg>
+          </div>
+          <div class="stat-content">
+            <div class="stat-value">{{ totalClicks }}</div>
+            <div class="stat-label">Total Clicks</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon success">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+          </div>
+          <div class="stat-content">
+            <div class="stat-value">{{ activeUrls }}</div>
+            <div class="stat-label">Active URLs</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon warning">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+          </div>
+          <div class="stat-content">
+            <div class="stat-value">{{ recentUrls.length }}</div>
+            <div class="stat-label">Recent (5)</div>
+          </div>
+        </div>
+      </div>
+      <!-- Content Grid -->
+      <div class="content-grid">
+        <!-- Recent URLs Table -->
+        <div class="card">
+          <div class="card-header">
+            <h3>Recent URLs</h3>
+            <a routerLink="/urls" class="view-all-link">View all →</a>
+          </div>
+          <div *ngIf="isLoading" class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading URLs...</p>
+          </div>
+          <div
+            *ngIf="!isLoading && recentUrls.length === 0"
+            class="empty-state"
+          >
+            <div class="empty-icon">🔗</div>
+            <p>No URLs yet. Create your first short URL below.</p>
+          </div>
+          <table *ngIf="!isLoading && recentUrls.length > 0" class="url-table">
+            <thead>
+              <tr>
+                <th>Short Code</th>
+                <th>Destination</th>
+                <th>Clicks</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let url of recentUrls">
+                <td>
+                  <a
+                    [href]="url.shortUrl"
+                    target="_blank"
+                    class="short-code-link"
+                  >
+                    {{ url.shortCode }}
+                  </a>
+                </td>
+                <td>
+                  <div class="long-url" [title]="url.longUrl">
+                    {{ url.longUrl }}
+                  </div>
+                </td>
+                <td>
+                  <span class="click-count">{{ url.clickCount }}</span>
+                </td>
+                <td>
+                  <span
+                    class="status-pill"
+                    [class.active]="url.isActive"
+                    [class.inactive]="!url.isActive"
+                  >
+                    {{ url.isActive ? "Active" : "Inactive" }}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    class="btn-link"
+                    (click)="goToAnalytics(url.shortCode)"
+                  >
+                    Analytics
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- Quick Shorten Panel -->
+        <div class="card">
+          <div class="card-header">
+            <h3>Quick Shorten</h3>
+          </div>
+          <div class="card-body">
+            <div class="quick-shorten">
+              <div class="quick-shorten-input">
+                <input
+                  type="url"
+                  class="quick-input"
+                  [(ngModel)]="quickUrl"
+                  placeholder="https://example.com/long-url"
+                  (keyup.enter)="quickShorten()"
+                />
+                <button
+                  class="btn-primary-sm"
+                  (click)="quickShorten()"
+                  [disabled]="quickShortenLoading || !quickUrl.trim()"
+                >
+                  <svg
+                    *ngIf="!quickShortenLoading"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                  >
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                    <polyline points="12 5 19 12 12 19" />
+                  </svg>
+                  {{ quickShortenLoading ? "..." : "Go" }}
+                </button>
+              </div>
+              <p
+                *ngIf="quickError"
+                style="
+                  font-size: 0.875rem;
+                  color: var(--color-error);
+                  font-weight: 500;
+                "
+              >
+                {{ quickError }}
+              </p>
+              <div *ngIf="quickResult" class="quick-result">
+                <span class="quick-result-url">{{ quickResult.shortUrl }}</span>
+                <button class="btn-copy-sm" (click)="copyQuickResult()">
+                  <span *ngIf="!copied">Copy</span>
+                  <span *ngIf="copied">Copied!</span>
+                </button>
+              </div>
+              <div
+                style="
+                  margin-top: 1rem;
+                  padding-top: 1rem;
+                  border-top: 1px solid var(--color-border);
+                "
+              >
+                <p
+                  style="
+                    font-size: 0.875rem;
+                    color: var(--color-text-muted);
+                    margin-bottom: 0.75rem;
+                  "
+                >
+                  Need more options?
+                </p>
+                <a
+                  routerLink="/urls/new"
+                  style="
+                    display: block;
+                    text-align: center;
+                    padding: 0.625rem;
+                    background: rgba(0, 48, 87, 0.06);
+                    border-radius: 6px;
+                    color: var(--color-navy);
+                    font-weight: 600;
+                    font-size: 0.9rem;
+                    text-decoration: none;
+                  "
+                >
+                  Advanced URL Creator →
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>

@@ -1,0 +1,150 @@
+<div class="register-wrapper">
+  <!-- Brand -->
+  <div class="register-brand">
+    <div class="brand-logo-large">S</div>
+    <h1 class="brand-title">Schwab</h1>
+    <p class="brand-tagline">URL Shortener Platform</p>
+  </div>
+  <!-- Card -->
+  <div class="register-card">
+    <div class="register-card-header">
+      <h2>Create Account</h2>
+      <p>Set up your URL Shortener account</p>
+    </div>
+    <div class="register-card-body">
+      <!-- Error Alert -->
+      <div *ngIf="errorMessage" class="alert-error">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          style="flex-shrink: 0; margin-top: 1px"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        {{ errorMessage }}
+      </div>
+      <form [formGroup]="registerForm" (ngSubmit)="submit()" novalidate>
+        <!-- Username -->
+        <div class="form-group">
+          <label class="form-label" for="username">Username</label>
+          <input
+            id="username"
+            type="text"
+            class="form-control"
+            [class.is-invalid]="username?.invalid && username?.touched"
+            formControlName="username"
+            placeholder="Choose a username"
+            autocomplete="username"
+            autocapitalize="none"
+          />
+          <div
+            *ngIf="username?.invalid && username?.touched"
+            class="field-error"
+          >
+            <span *ngIf="username?.errors?.['required']"
+              >Username is required.</span
+            >
+            <span *ngIf="username?.errors?.['minlength']"
+              >Username must be at least 3 characters.</span
+            >
+            <span *ngIf="username?.errors?.['maxlength']"
+              >Username cannot exceed 30 characters.</span
+            >
+            <span *ngIf="username?.errors?.['pattern']"
+              >Username can only contain letters, numbers, and
+              underscores.</span
+            >
+          </div>
+        </div>
+        <!-- Email -->
+        <div class="form-group">
+          <label class="form-label" for="email">Email Address</label>
+          <input
+            id="email"
+            type="email"
+            class="form-control"
+            [class.is-invalid]="email?.invalid && email?.touched"
+            formControlName="email"
+            placeholder="Enter your email"
+            autocomplete="email"
+          />
+          <div *ngIf="email?.invalid && email?.touched" class="field-error">
+            <span *ngIf="email?.errors?.['required']">Email is required.</span>
+            <span *ngIf="email?.errors?.['email']"
+              >Please enter a valid email address.</span
+            >
+          </div>
+        </div>
+        <!-- Passwords Row -->
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="password">Password</label>
+            <input
+              id="password"
+              type="password"
+              class="form-control"
+              [class.is-invalid]="password?.invalid && password?.touched"
+              formControlName="password"
+              placeholder="Min 8 characters"
+              autocomplete="new-password"
+            />
+            <div
+              *ngIf="password?.invalid && password?.touched"
+              class="field-error"
+            >
+              <span *ngIf="password?.errors?.['required']"
+                >Password is required.</span
+              >
+              <span *ngIf="password?.errors?.['minlength']"
+                >Minimum 8 characters.</span
+              >
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="confirmPassword"
+              >Confirm Password</label
+            >
+            <input
+              id="confirmPassword"
+              type="password"
+              class="form-control"
+              [class.is-invalid]="
+                (confirmPassword?.invalid && confirmPassword?.touched) ||
+                (registerForm.errors?.['passwordMismatch'] &&
+                  confirmPassword?.touched)
+              "
+              formControlName="confirmPassword"
+              placeholder="Repeat password"
+              autocomplete="new-password"
+            />
+            <div
+              *ngIf="
+                confirmPassword?.touched &&
+                registerForm.errors?.['passwordMismatch']
+              "
+              class="field-error"
+            >
+              Passwords do not match.
+            </div>
+          </div>
+        </div>
+        <!-- Submit -->
+        <button type="submit" class="btn-submit" [disabled]="isLoading">
+          <div *ngIf="isLoading" class="spinner-sm"></div>
+          <span>{{
+            isLoading ? "Creating Account..." : "Create Account"
+          }}</span>
+        </button>
+      </form>
+    </div>
+    <div class="register-card-footer">
+      Already have an account? <a routerLink="/login">Sign in</a>
+    </div>
+  </div>
+</div>
