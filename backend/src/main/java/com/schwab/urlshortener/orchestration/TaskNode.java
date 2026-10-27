@@ -1,6 +1,7 @@
 package com.schwab.urlshortener.orchestration;
 
 import com.schwab.urlshortener.orchestration.model.ApprovalGate;
+import com.schwab.urlshortener.orchestration.model.ExecutionGate;
 import com.schwab.urlshortener.orchestration.model.RetryPolicy;
 import com.schwab.urlshortener.orchestration.model.TaskResult;
 import com.schwab.urlshortener.orchestration.model.TaskStage;
@@ -9,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.time.Duration;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -20,10 +22,14 @@ public class TaskNode {
   private final TaskStage stage;
   private final List<String> dependencyIds;
   private final Callable<TaskResult> executor;
+  private final Callable<TaskResult> fallbackExecutor;
   private final RollbackHandler rollbackHandler;
   private final RetryPolicy retryPolicy;
   private final ApprovalGate approvalGate;
   private final List<PolicyGuardrail> guardrails;
+  private final List<ExecutionGate> entryGates;
+  private final List<ExecutionGate> exitGates;
+  private final Duration executionTimeout;
   // Mutable state
   private final AtomicReference<TaskStatus> status = new AtomicReference<>(TaskStatus.PENDING);
   private final AtomicInteger attemptCount = new AtomicInteger(0);
@@ -37,20 +43,28 @@ public class TaskNode {
       TaskStage stage,
       List<String> dependencyIds,
       Callable<TaskResult> executor,
+      Callable<TaskResult> fallbackExecutor,
       RollbackHandler rollbackHandler,
       RetryPolicy retryPolicy,
       ApprovalGate approvalGate,
-      List<PolicyGuardrail> guardrails) {
+      List<PolicyGuardrail> guardrails,
+      List<ExecutionGate> entryGates,
+      List<ExecutionGate> exitGates,
+      Duration executionTimeout) {
     this.id = id;
     this.name = name;
     this.description = description;
     this.stage = stage;
     this.dependencyIds = Collections.unmodifiableList(new ArrayList<>(dependencyIds));
     this.executor = executor;
+    this.fallbackExecutor = fallbackExecutor;
     this.rollbackHandler = rollbackHandler;
     this.retryPolicy = retryPolicy != null ? retryPolicy : RetryPolicy.defaultPolicy();
     this.approvalGate = approvalGate != null ? approvalGate : ApprovalGate.none();
     this.guardrails = Collections.unmodifiableList(new ArrayList<>(guardrails));
+    this.entryGates = Collections.unmodifiableList(new ArrayList<>(entryGates));
+    this.exitGates = Collections.unmodifiableList(new ArrayList<>(exitGates));
+    this.executionTimeout = executionTimeout;
   }
 
   // Getters
@@ -78,6 +92,10 @@ public class TaskNode {
     return executor;
   }
 
+  public Callable<TaskResult> getFallbackExecutor() {
+    return fallbackExecutor;
+  }
+
   public RollbackHandler getRollbackHandler() {
     return rollbackHandler;
   }
@@ -92,6 +110,18 @@ public class TaskNode {
 
   public List<PolicyGuardrail> getGuardrails() {
     return guardrails;
+  }
+
+  public List<ExecutionGate> getEntryGates() {
+    return entryGates;
+  }
+
+  public List<ExecutionGate> getExitGates() {
+    return exitGates;
+  }
+
+  public Duration getExecutionTimeout() {
+    return executionTimeout;
   }
 
   public TaskStatus getStatus() {
@@ -126,6 +156,13 @@ public class TaskNode {
     return attemptCount.incrementAndGet();
   }
 
+  public void resetForReplan() {
+    this.lastResult = null;
+    this.blockingPolicyViolation = null;
+    this.attemptCount.set(0);
+    this.status.set(TaskStatus.PENDING);
+  }
+
   public boolean isReadyToExecute(Set<String> completedNodeIds) {
     TaskStatus current = status.get();
     return (current == TaskStatus.PENDING || current == TaskStatus.APPROVED)
@@ -146,10 +183,14 @@ public class TaskNode {
     private TaskStage stage;
     private final List<String> dependencyIds = new ArrayList<>();
     private Callable<TaskResult> executor;
+    private Callable<TaskResult> fallbackExecutor;
     private RollbackHandler rollbackHandler;
     private RetryPolicy retryPolicy = RetryPolicy.defaultPolicy();
     private ApprovalGate approvalGate = ApprovalGate.none();
     private final List<PolicyGuardrail> guardrails = new ArrayList<>();
+    private final List<ExecutionGate> entryGates = new ArrayList<>();
+    private final List<ExecutionGate> exitGates = new ArrayList<>();
+    private Duration executionTimeout = Duration.ofMinutes(5);
 
     public Builder id(String id) {
       this.id = id;
@@ -186,6 +227,11 @@ public class TaskNode {
       return this;
     }
 
+    public Builder fallbackExecutor(Callable<TaskResult> executor) {
+      this.fallbackExecutor = executor;
+      return this;
+    }
+
     public Builder rollbackHandler(RollbackHandler handler) {
       this.rollbackHandler = handler;
       return this;
@@ -211,10 +257,38 @@ public class TaskNode {
       return this;
     }
 
+    public Builder entryGate(ExecutionGate gate) {
+      this.entryGates.add(gate);
+      return this;
+    }
+
+    public Builder entryGates(List<ExecutionGate> gates) {
+      this.entryGates.addAll(gates);
+      return this;
+    }
+
+    public Builder exitGate(ExecutionGate gate) {
+      this.exitGates.add(gate);
+      return this;
+    }
+
+    public Builder exitGates(List<ExecutionGate> gates) {
+      this.exitGates.addAll(gates);
+      return this;
+    }
+
+    public Builder executionTimeout(Duration timeout) {
+      this.executionTimeout = timeout;
+      return this;
+    }
+
     public TaskNode build() {
       if (id == null || id.isBlank()) throw new IllegalStateException("TaskNode id is required");
       if (stage == null) throw new IllegalStateException("TaskNode stage is required");
       if (executor == null) throw new IllegalStateException("TaskNode executor is required");
+      if (executionTimeout == null || executionTimeout.isZero() || executionTimeout.isNegative()) {
+        throw new IllegalStateException("TaskNode execution timeout must be positive");
+      }
       return new TaskNode(
           id,
           name != null ? name : id,
@@ -222,10 +296,14 @@ public class TaskNode {
           stage,
           dependencyIds,
           executor,
+          fallbackExecutor,
           rollbackHandler,
           retryPolicy,
           approvalGate,
-          guardrails);
+          guardrails,
+          entryGates,
+          exitGates,
+          executionTimeout);
     }
   }
 

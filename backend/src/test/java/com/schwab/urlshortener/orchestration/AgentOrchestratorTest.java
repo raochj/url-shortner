@@ -41,6 +41,7 @@ class AgentOrchestratorTest {
   @Mock private OrchestratorTaskLogRepository taskLogRepository;
   @Mock private ApprovalCoordinator approvalCoordinator;
   @Mock private ReliabilityTracker reliabilityTracker;
+  @Mock private AuditTrailService auditTrailService;
   @Mock private UserRepository userRepository;
   @InjectMocks private AgentOrchestrator agentOrchestrator;
   private final ObjectMapper objectMapper = new ObjectMapper();

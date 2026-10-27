@@ -75,6 +75,7 @@ app:
     polling-interval-ms: 500
     dynamic-replan-interval-ms: 250
     demo-task-duration-ms: 2000
+    codebase-root: ${APP_CODEBASE_ROOT:.}
   analytics:
     pool-size: 4
     queue-capacity: 10000

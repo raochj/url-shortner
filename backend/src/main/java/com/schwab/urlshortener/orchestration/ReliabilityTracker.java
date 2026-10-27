@@ -5,7 +5,9 @@ import com.schwab.urlshortener.orchestration.model.TaskStatus;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -24,6 +26,8 @@ public class ReliabilityTracker {
   private static final int IDX_RECOVER = 3;
   // Key: "runId:taskId" -> timing array
   private final ConcurrentHashMap<String, long[]> timings = new ConcurrentHashMap<>();
+  private final Set<String> fallbacks = ConcurrentHashMap.newKeySet();
+  private final ConcurrentHashMap<String, AtomicInteger> replans = new ConcurrentHashMap<>();
 
   // -------------------------------------------------------------------------
   // Recording methods
@@ -77,6 +81,14 @@ public class ReliabilityTracker {
     log.debug("ReliabilityTracker: recordRecovery key={}", key);
   }
 
+  public void recordFallback(String runId, String taskId) {
+    fallbacks.add(key(runId, taskId));
+  }
+
+  public void recordReplan(String runId) {
+    replans.computeIfAbsent(runId, ignored -> new AtomicInteger()).incrementAndGet();
+  }
+
   // -------------------------------------------------------------------------
   // Metrics snapshot
   // -------------------------------------------------------------------------
@@ -92,7 +104,7 @@ public class ReliabilityTracker {
       retryCount += Math.max(0, node.getAttemptCount() - 1);
       TaskStatus status = node.getStatus();
       switch (status) {
-        case COMPLETED -> completedTasks++;
+        case COMPLETED, FALLBACK_COMPLETED -> completedTasks++;
         case FAILED -> failedTasks++;
         case ROLLED_BACK -> rolledBackTasks++;
         case AWAITING_APPROVAL -> approvalsPending++;
@@ -103,7 +115,11 @@ public class ReliabilityTracker {
       }
     }
     double successRate = totalTasks > 0 ? (double) completedTasks / totalTasks * 100.0 : 0.0;
+    double retryRate = totalTasks > 0 ? (double) retryCount / totalTasks * 100.0 : 0.0;
     double rollbackRate = totalTasks > 0 ? (double) rolledBackTasks / totalTasks * 100.0 : 0.0;
+    int fallbackCount =
+        (int) fallbacks.stream().filter(value -> value.startsWith(runId + ":")).count();
+    int replanCount = replans.getOrDefault(runId, new AtomicInteger()).get();
     // Collect latency values (endMs - startMs) for tasks that completed
     List<Long> latencies = new ArrayList<>();
     List<Long> mttrValues = new ArrayList<>();
@@ -147,7 +163,10 @@ public class ReliabilityTracker {
         failedTasks,
         rolledBackTasks,
         retryCount,
+        fallbackCount,
+        replanCount,
         successRate,
+        retryRate,
         rollbackRate,
         totalElapsedMs,
         mttr,
@@ -167,5 +186,7 @@ public class ReliabilityTracker {
   public void removeRun(String runId) {
     String prefix = runId + ":";
     timings.keySet().removeIf(key -> key.startsWith(prefix));
+    fallbacks.removeIf(key -> key.startsWith(prefix));
+    replans.remove(runId);
   }
 }

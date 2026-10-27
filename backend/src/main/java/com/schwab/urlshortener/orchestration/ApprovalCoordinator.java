@@ -126,4 +126,21 @@ public class ApprovalCoordinator {
   public int countApproved(UUID runId) {
     return approvalRequestRepository.findAllByRunIdAndStatus(runId, "APPROVED").size();
   }
+
+  /** Revokes stale approvals when the evidence on which they were based changes. */
+  @Transactional
+  public int supersedeApprovals(UUID runId, java.util.Set<String> taskIds) {
+    int count = 0;
+    for (ApprovalRequest request : approvalRequestRepository.findAllByRunId(runId)) {
+      if (taskIds.contains(request.getTaskId())
+          && ("PENDING".equals(request.getStatus()) || "APPROVED".equals(request.getStatus()))) {
+        request.setStatus("SUPERSEDED");
+        request.setDecidedAt(OffsetDateTime.now());
+        request.setApproverComment("Invalidated by governed re-plan");
+        approvalRequestRepository.save(request);
+        count++;
+      }
+    }
+    return count;
+  }
 }

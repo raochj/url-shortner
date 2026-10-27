@@ -116,6 +116,13 @@ public class GlobalExceptionHandler {
         .body(ApiResponse.error(ex.getMessage(), "BAD_REQUEST"));
   }
 
+  @ExceptionHandler(IllegalStateException.class)
+  public ResponseEntity<ApiResponse<Void>> handleIllegalState(IllegalStateException ex) {
+    log.warn("Invalid state transition: {}", ex.getMessage());
+    return ResponseEntity.status(HttpStatus.CONFLICT)
+        .body(ApiResponse.error(ex.getMessage(), "INVALID_STATE"));
+  }
+
   @ExceptionHandler(BadCredentialsException.class)
   public ResponseEntity<ApiResponse<Void>> handleBadCredentials(BadCredentialsException ex) {
     return ResponseEntity.status(HttpStatus.UNAUTHORIZED)

@@ -68,6 +68,36 @@ export class OrchestrationService {
       },
     );
   }
+  pauseRun(runId: string, reason: string): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/runs/${runId}/pause`, { reason });
+  }
+  resumeRun(runId: string, reason: string): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/runs/${runId}/resume`, { reason });
+  }
+  safeStopRun(runId: string, reason: string): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/runs/${runId}/safe-stop`, {
+      reason,
+    });
+  }
+  replanRun(
+    runId: string,
+    changedTaskId: string,
+    revisedArtifacts: Record<string, unknown>,
+    reason: string,
+  ): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/runs/${runId}/replan`, {
+      changedTaskId,
+      revisedArtifacts,
+      reason,
+    });
+  }
+  getAuditEvents(runId: string): Observable<unknown[]> {
+    return this.http
+      .get<ApiResponse<unknown[]>>(
+        `${this.baseUrl}/runs/${runId}/audit-events`,
+      )
+      .pipe(map((response) => response.data));
+  }
   injectTask(runId: string, task: Partial<unknown>): Observable<unknown> {
     return this.http.post<unknown>(
       `${this.baseUrl}/runs/${runId}/inject`,

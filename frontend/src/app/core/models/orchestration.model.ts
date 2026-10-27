@@ -4,9 +4,11 @@ export type TaskStatus =
   | "AWAITING_APPROVAL"
   | "APPROVED"
   | "COMPLETED"
+  | "FALLBACK_COMPLETED"
   | "FAILED"
   | "ROLLED_BACK"
-  | "SKIPPED";
+  | "SKIPPED"
+  | "STALE";
 export type TaskStage =
   | "REQUIREMENTS"
   | "DESIGN"
@@ -27,6 +29,8 @@ export interface TaskNode {
   errorDetail?: string;
   requiresApproval: boolean;
   approvalPrompt?: string;
+  entryGates: string[];
+  exitGates: string[];
 }
 export interface ReliabilityMetrics {
   runId: string;
@@ -35,7 +39,10 @@ export interface ReliabilityMetrics {
   failedTasks: number;
   rolledBackTasks: number;
   retryCount: number;
+  fallbackCount: number;
+  replanCount: number;
   successRate: number;
+  retryRate: number;
   rollbackRate: number;
   totalElapsedMs: number;
   meanTimeToRecoverMs: number;
@@ -48,6 +55,7 @@ export interface OrchestrationRun {
   runId: string;
   scenarioType: ScenarioType;
   status: string;
+  contextVersion: number;
   tasks: TaskNode[];
   parameters: Record<string, unknown>;
   startedAt?: string;

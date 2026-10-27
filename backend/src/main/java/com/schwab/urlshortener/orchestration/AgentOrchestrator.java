@@ -8,6 +8,7 @@ import com.schwab.urlshortener.dto.response.OrchestrationRunSummaryResponse;
 import com.schwab.urlshortener.dto.response.ReliabilityMetricsResponse;
 import com.schwab.urlshortener.dto.response.TaskNodeResponse;
 import com.schwab.urlshortener.entity.OrchestratorRun;
+import com.schwab.urlshortener.entity.OrchestrationAuditEvent;
 import com.schwab.urlshortener.entity.OrchestratorTaskLog;
 import com.schwab.urlshortener.entity.User;
 import com.schwab.urlshortener.exception.CapacityExceededException;
@@ -61,6 +62,7 @@ public class AgentOrchestrator {
   private final ReliabilityTracker reliabilityTracker;
   private final UserRepository userRepository;
   private final ObjectMapper objectMapper;
+  private final AuditTrailService auditTrailService;
 
   @Value("${app.orchestration.max-active-runs:100}")
   private int maxActiveRuns = 100;
@@ -169,6 +171,50 @@ public class AgentOrchestrator {
             .findByUsername(approverUsername)
             .orElseThrow(() -> new IllegalArgumentException("User not found: " + approverUsername));
     submitApproval(runId, taskId, approved, approver.getId(), comment);
+    engine.recordApprovalDecision(runId, taskId, approved, approverUsername, comment);
+  }
+
+  public void pauseRun(String runId, String username, boolean admin, String reason) {
+    requireAdmin(admin);
+    requireRunAccess(runId, username, true);
+    engine.pauseRun(runId, username, reason);
+  }
+
+  public void resumeRun(String runId, String username, boolean admin, String reason) {
+    requireAdmin(admin);
+    requireRunAccess(runId, username, true);
+    engine.resumeRun(runId, username, reason);
+  }
+
+  public void safeStopRun(String runId, String username, boolean admin, String reason) {
+    requireAdmin(admin);
+    requireRunAccess(runId, username, true);
+    engine.requestSafeStop(runId, username, reason);
+  }
+
+  public Set<String> replanRun(
+      String runId,
+      String changedTaskId,
+      Map<String, Object> revisedArtifacts,
+      String username,
+      boolean admin,
+      String reason) {
+    requireAdmin(admin);
+    requireRunAccess(runId, username, true);
+    return engine.replan(runId, changedTaskId, revisedArtifacts, username, reason);
+  }
+
+  @Transactional(readOnly = true)
+  public List<OrchestrationAuditEvent> getAuditEvents(
+      String runId, String username, boolean admin) {
+    requireRunAccess(runId, username, admin);
+    return auditTrailService.events(runId);
+  }
+
+  @Transactional(readOnly = true)
+  public boolean verifyAuditIntegrity(String runId, String username, boolean admin) {
+    requireRunAccess(runId, username, admin);
+    return auditTrailService.verifyChain(runId);
   }
 
   // =========================================================================
@@ -223,6 +269,7 @@ public class AgentOrchestrator {
         runId,
         run.getScenarioType(),
         run.getStatus(),
+        graph != null ? graph.getContextVersion() : readContextVersion(run.getDagSnapshot()),
         taskResponses,
         params,
         run.getStartedAt(),
@@ -254,7 +301,9 @@ public class AgentOrchestrator {
                 throw new IllegalStateException("Invalid stored metrics for run=" + runId, e);
               }
             })
-        .orElse(new ReliabilityMetrics(runId, 0, 0, 0, 0, 0, 0.0, 0.0, 0, 0, 0, 0, 0, 0));
+        .orElse(
+            new ReliabilityMetrics(
+                runId, 0, 0, 0, 0, 0, 0, 0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0));
   }
 
   @Transactional(readOnly = true)
@@ -272,6 +321,11 @@ public class AgentOrchestrator {
       throw new IllegalStateException("Run " + runId + " is not active — cannot inject tasks");
     }
     graph.injectNode(newNode, afterIds);
+    engine.graphChanged(
+        runId,
+        "TASK_INJECTED",
+        "administrator",
+        Map.of("taskId", newNode.getId(), "dependencies", afterIds));
     log.info("Injected task {} into run {} after {}", newNode.getId(), runId, afterIds);
   }
 
@@ -427,6 +481,13 @@ public class AgentOrchestrator {
         }
         log.info("AMBIGUOUS: Injected {} tasks into run {}", injectionTasks.size(), runId);
         graph.setDynamicExpansionPending(false);
+        engine.graphChanged(
+            runId,
+            "PLAN_EXPANDED",
+            "planner",
+            Map.of(
+                "sourceTask", "CLARIFY-001",
+                "injectedTasks", injectionTasks.stream().map(TaskNode::getId).toList()));
       } catch (RuntimeException ex) {
         ambiguousInjected.remove(runId);
         throw ex;
@@ -453,15 +514,18 @@ public class AgentOrchestrator {
               node.getDependencyIds(),
               result != null ? result.errorDetail() : node.getBlockingPolicyViolation(),
               node.getApprovalGate().required(),
-              node.getApprovalGate().approvalPrompt()));
+              node.getApprovalGate().approvalPrompt(),
+              node.getEntryGates().stream().map(gate -> gate.id()).toList(),
+              node.getExitGates().stream().map(gate -> gate.id()).toList()));
     }
     return responses;
   }
 
   private List<TaskNodeResponse> buildTaskResponsesFromLogs(List<OrchestratorTaskLog> logs) {
-    List<TaskNodeResponse> responses = new ArrayList<>();
+    Map<String, TaskNodeResponse> latestByTask = new java.util.LinkedHashMap<>();
     for (OrchestratorTaskLog log_entry : logs) {
-      responses.add(
+      latestByTask.put(
+          log_entry.getTaskId(),
           new TaskNodeResponse(
               log_entry.getTaskId(),
               log_entry.getTaskName(),
@@ -473,9 +537,11 @@ public class AgentOrchestrator {
               List.of(),
               log_entry.getErrorDetail(),
               false,
-              ""));
+              "",
+              List.of(),
+              List.of()));
     }
-    return responses;
+    return new ArrayList<>(latestByTask.values());
   }
 
   private ReliabilityMetricsResponse toMetricsResponse(ReliabilityMetrics m) {
@@ -486,7 +552,10 @@ public class AgentOrchestrator {
         m.failedTasks(),
         m.rolledBackTasks(),
         m.retryCount(),
+        m.fallbackCount(),
+        m.replanCount(),
         m.successRate(),
+        m.retryRate(),
         m.rollbackRate(),
         m.totalElapsedMs(),
         m.meanTimeToRecoverMs(),
@@ -515,6 +584,21 @@ public class AgentOrchestrator {
             .orElseThrow(() -> new IllegalArgumentException("Run not found: " + runId));
     if (run.getInitiatedBy() == null || !run.getInitiatedBy().getUsername().equals(username)) {
       throw new AccessDeniedException("You do not have access to orchestration run: " + runId);
+    }
+  }
+
+  private void requireAdmin(boolean admin) {
+    if (!admin) throw new AccessDeniedException("Administrator role is required");
+  }
+
+  private long readContextVersion(String snapshot) {
+    if (snapshot == null || snapshot.isBlank()) return 0L;
+    try {
+      Map<String, Object> value = objectMapper.readValue(snapshot, new TypeReference<>() {});
+      Object version = value.get("contextVersion");
+      return version instanceof Number number ? number.longValue() : 0L;
+    } catch (JsonProcessingException e) {
+      return 0L;
     }
   }
 

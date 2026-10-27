@@ -2,7 +2,11 @@ package com.schwab.urlshortener.orchestration.scenarios;
 
 import com.schwab.urlshortener.orchestration.TaskGraph;
 import com.schwab.urlshortener.orchestration.TaskNode;
+import com.schwab.urlshortener.orchestration.guardrails.ChangeControlPolicyGuardrail;
+import com.schwab.urlshortener.orchestration.guardrails.CompliancePolicyGuardrail;
+import com.schwab.urlshortener.orchestration.guardrails.SecurityPolicyGuardrail;
 import com.schwab.urlshortener.orchestration.model.ApprovalGate;
+import com.schwab.urlshortener.orchestration.model.ExecutionGate;
 import com.schwab.urlshortener.orchestration.model.RetryPolicy;
 import com.schwab.urlshortener.orchestration.model.TaskResult;
 import com.schwab.urlshortener.orchestration.model.TaskStage;
@@ -10,6 +14,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -19,7 +24,11 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class GreenfieldScenario {
+  private final SecurityPolicyGuardrail securityPolicyGuardrail;
+  private final CompliancePolicyGuardrail compliancePolicyGuardrail;
+  private final ChangeControlPolicyGuardrail changeControlPolicyGuardrail;
   @Value("${app.orchestration.demo-task-duration-ms:2000}")
   private long baseDurationMs;
 
@@ -74,6 +83,9 @@ public class GreenfieldScenario {
             .description("Design PostgreSQL schema for url_mappings, users, analytics tables")
             .stage(TaskStage.DESIGN)
             .dependsOn("REQ-001", "REQ-002")
+            .entryGate(
+                ExecutionGate.requires(
+                    "DESIGN-EVIDENCE", "Requirements baselined", "requirements-doc", "nfr-doc"))
             .approvalGate(
                 ApprovalGate.adminRequired(
                     "Approve DB schema design before proceeding to implementation"))
@@ -89,6 +101,8 @@ public class GreenfieldScenario {
                       Instant.now(),
                       1);
                 })
+            .exitGate(
+                ExecutionGate.requires("SCHEMA-REVIEW", "Schema artifact produced", "schema-doc"))
             .build();
     TaskNode design002 =
         TaskNode.builder()
@@ -228,7 +242,11 @@ public class GreenfieldScenario {
                   return TaskResult.success(
                       "TEST-002",
                       "Integration tests passed",
-                      Map.of("tests", 12, "passed", 12, "integrationCoverage", "88%"),
+                      Map.of(
+                          "tests", 12,
+                          "passed", 12,
+                          "integrationCoverage", "88%",
+                          "security-scan", "PASSED"),
                       Instant.now(),
                       Instant.now(),
                       1);
@@ -266,6 +284,19 @@ public class GreenfieldScenario {
             .approvalGate(
                 ApprovalGate.adminRequired(
                     "Approve staging deployment: verify all tests pass and docs are complete"))
+            .entryGate(
+                ExecutionGate.requires(
+                    "RELEASE-EVIDENCE",
+                    "Tests, security scan, and documentation complete",
+                    "testing-completed",
+                    "security-scan",
+                    "api-spec"))
+            .exitGate(
+                ExecutionGate.requires(
+                    "HEALTH-CHECK", "Deployment health check passed", "healthCheck"))
+            .guardrail(securityPolicyGuardrail)
+            .guardrail(compliancePolicyGuardrail)
+            .guardrail(changeControlPolicyGuardrail)
             .retryPolicy(RetryPolicy.defaultPolicy())
             .rollbackHandler(
                 result -> {

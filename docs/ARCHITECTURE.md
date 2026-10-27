@@ -18,52 +18,63 @@ PostgreSQL owns durable users, URL mappings, analytics events, orchestration run
 
 ## Orchestration model
 
-`TaskGraph` is the explicit dependency graph. Each `TaskNode` contains identity, SDLC stage, dependencies, an executor returning structured artifacts, bounded retry policy, optional approval/policy/rollback controls, and observable mutable state.
+`TaskGraph` is the explicit dependency graph. Each `TaskNode` contains identity, SDLC stage, dependencies, an executor returning structured artifacts, declarative entry/exit evidence gates, bounded retry policy, an optional fallback, and approval/policy/rollback controls.
 
 The engine ticks every 500 ms and submits every dependency-ready node to a bounded worker pool. Independent nodes therefore run concurrently. A per-run/task submission key prevents duplicate dispatch, including throughout retry delays.
 
 ```text
-PENDING -> policy/stage checks -> AWAITING_APPROVAL -> APPROVED
+PENDING -> entry gate/policies -> AWAITING_APPROVAL -> APPROVED
    |                                      |               |
    `--------------------------------------'               v
                                                    IN_PROGRESS
                                                     /       \
-                                             COMPLETED    retry
-                                                           |
-                                                        FAILED
-                                                           |
-                                             rollback + safe stop
+                                      COMPLETED/FALLBACK    retry
+                                                           /   \
+                                                   fallback   FAILED
+                                                               |
+                                             reverse-topological rollback
+                                                       + safe stop
 ```
 
 Approval gates are checked **before** executing a high-impact task. Decisions are durable in `approval_requests`; only an ADMIN can decide them. Rejection or ten-minute expiry fails the node, records the reason, compensates completed nodes with rollback handlers, skips remaining pending work, and terminates the run.
 
-Policy guardrails run before task execution. Blocking findings prevent execution; warnings remain observable and allow progression. Stage-entry checks add a second synchronization boundary in addition to explicit dependencies.
+Policy guardrails run before task execution. Security, compliance, and change-control policies can block work. Entry gates validate required upstream evidence and exit gates validate executor artifacts. Dependencies—not global stage barriers—provide synchronization, so independent paths can cross stage boundaries and execute concurrently without weakening their local gates.
 
 ## Dynamic re-planning
 
-An ambiguous graph carries a `dynamicExpansionPending` flag so it cannot finish after its sole clarification node. A scheduled planner observes the structured clarification artifact and injects four nodes. Injected nodes use normal dependencies, stage checks, retries, and telemetry; the flag clears only after successful expansion.
+An ambiguous graph carries a `dynamicExpansionPending` flag so it cannot finish after its sole clarification node. A scheduled planner observes the structured clarification artifact and injects four nodes. Injected nodes use normal dependencies, evidence gates, retries, and telemetry; the flag clears only after successful expansion.
 
-If upstream output changed in a production implementation, the planner would version the context, invalidate descendants, and require renewed approval for materially changed work. This prototype demonstrates initial late-bound expansion, not arbitrary plan revision after execution.
+For changed upstream output, an administrator pauses the run and submits a reason plus revised artifacts. The engine refuses to re-plan across in-flight work, increments the context version, calculates the transitive descendant set, resets only affected work, supersedes pending or granted approvals whose evidence is stale, checkpoints the graph, and appends a `PLAN_REVISED` audit event. Reviewers then explicitly resume the run.
+
+## Brownfield reasoning evidence
+
+The brownfield requirements agent performs a bounded, read-only scan of the configured repository root. It inventories concrete API, service, persistence, security, frontend, build, and regression-test files; builds a symbol-reference index; extracts controller annotation and schema evidence; and emits a structured impact report plus complete Markdown. The next design task has an entry gate requiring that evidence. In packaged environments without source files, the analyzer explicitly reports `RUNTIME_CLASSPATH` mode and produces a reduced component inventory rather than pretending a source scan occurred.
+
+The design and documentation nodes emit full design and OpenAPI content in their artifacts. They no longer use a filename as a substitute for an engineering deliverable. Execution remains read-only: the scenario proposes changes and evidence but does not silently mutate the repository.
 
 ## Failure and recovery behavior
 
-- Retry attempts are bounded (three by default) and use exponential backoff.
-- Exhaustion triggers reverse-order best-effort compensation on completed nodes with handlers.
-- Safe-stop marks unstarted/awaiting nodes `SKIPPED`; no new downstream work begins.
-- The engine records per-attempt failure timestamps in memory and terminal task logs in PostgreSQL.
+- Task actions have a five-minute default deadline, are interrupt-cancelled on timeout, and retry attempts are bounded (three by default) with exponential backoff.
+- Exhaustion invokes a bounded fallback when configured; otherwise it triggers deterministic reverse-topological compensation on completed nodes with handlers.
+- ADMIN operators can pause/resume or request safe-stop. Safe-stop marks unstarted/awaiting nodes `SKIPPED`, supersedes their approvals, lets in-flight work reach a boundary, compensates eligible work, and finalizes `CANCELLED`.
+- Every failed retry attempt and terminal result is stored in PostgreSQL, not only the final attempt.
 - Worker and analytics executors are independently bounded, so analytics bursts cannot starve orchestration. Rejected orchestration submissions remain pending for a later scheduler tick.
 - `SseEmitter` polling jobs cancel on completion, timeout, disconnect, or controller shutdown.
-- A final serialized DAG snapshot supports historical visualization after a run leaves memory.
+- The serialized DAG and metrics are checkpointed at control and task-transition boundaries, and the terminal snapshot supports historical visualization after a run leaves memory.
 
-Active-run restart recovery is deliberately not claimed: executable closures and complete cross-stage context are not checkpointed. Durable approval rows alone do not make execution restart-safe. Production would persist node specifications and context at every transition, use optimistic locking/leases, and reconcile orphaned `IN_PROGRESS` tasks on startup.
+Executable adapters remain process-local, so active execution is not resumed after restart. Startup reconciliation now fails any orphaned `RUNNING`, `PAUSED`, or `SAFE_STOPPING` run closed, timestamps it, and appends `RUN_RECOVERY_SAFE_STOPPED` evidence. Production-grade resumption additionally requires versioned executable specifications, leases/idempotency keys, and reconciliation of orphaned `IN_PROGRESS` work.
 
 ## Observability and lineage
 
-The run ID correlates API state, approval records, task logs, SSE events, and reliability metrics. The API exposes total/completed/failed/rolled-back tasks, retry count, success and rollback rates, elapsed time, MTTR, p50/p95 task latency, and approval counts. Terminal metrics are persisted with the run. Task logs retain attempt, stage, timing, artifact payload, error, and policy-check JSON.
+The run ID correlates API state, approval records, task logs, SSE events, and reliability metrics. Context includes both compatibility keys and namespaced `task.<id>.artifacts` values plus a dependency/attempt lineage map. The context version changes on graph expansion or governed revision.
+
+`orchestration_audit_events` is an append-only lifecycle journal containing actor, event type, context version, correlation/causation IDs, payload, and a per-run SHA-256 hash chain. Payloads are recursively canonicalized before hashing and again during verification so PostgreSQL JSONB formatting cannot change the digest. A transaction-scoped PostgreSQL advisory lock serializes writers for each run across JVMs and prevents a forked chain head. The API exposes the journal and its integrity result to authorized reviewers. Task logs retain every attempt, stage, timing, artifacts, error, and policy-check JSON.
+
+Reliability telemetry exposes success, retry and rollback rates, fallback and re-plan counts, elapsed time, MTTR, p50/p95 task latency, and approval counts. Snapshots are persisted throughout the run and at finalization.
 
 Ordinary users can list and inspect only runs they initiated; administrators can inspect all runs to perform approval oversight. Approval records store the deciding administrator when a decision is submitted.
 
-Application logs supplement this audit record but are not themselves a tamper-evident audit store. Production controls should add trace IDs, OpenTelemetry, append-only retention, access monitoring, and sensitive-field redaction.
+Application logs supplement the hash-chained database journal. Production should additionally restrict UPDATE/DELETE on the audit table, export events to immutable retention, and add distributed OpenTelemetry traces and sensitive-field redaction.
 
 ## Security decisions
 
@@ -75,7 +86,7 @@ Application logs supplement this audit record but are not themselves a tamper-ev
 - Request DTOs constrain URL, alias, tag, pagination, date-range, approval, and injected-task inputs; the database independently enforces routeable aliases.
 - Proxy-derived IPs are accepted only from a private/loopback/link-local immediate peer and are syntactically validated.
 - Secrets in Compose/application configuration are demo defaults and must not be used for deployment.
-- Admin authorization applies to approvals and manual task injection.
+- Admin authorization applies to approvals, injection, pause/resume, safe-stop, and re-planning. Every high-impact decision requires a reason and is audit attributed.
 
 ## Scaling path
 

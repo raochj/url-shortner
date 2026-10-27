@@ -750,7 +750,11 @@ export class OrchestrationPanelComponent implements OnInit, OnDestroy {
         next: (run) => {
           this.activeRun = run;
           // Stop polling if terminal state
-          if (["COMPLETED", "FAILED", "ROLLED_BACK"].includes(run.status)) {
+          if (
+            ["COMPLETED", "FAILED", "ROLLED_BACK", "CANCELLED"].includes(
+              run.status,
+            )
+          ) {
             this.stopPolling();
           }
         },
@@ -785,6 +789,24 @@ export class OrchestrationPanelComponent implements OnInit, OnDestroy {
           // State update comes from polling
         },
       });
+  }
+  pauseRun(): void {
+    if (!this.activeRunId) return;
+    this.orchestrationService
+      .pauseRun(this.activeRunId, "Paused by administrator from control panel")
+      .subscribe({ error: (err) => (this.errorMessage = err.error?.message) });
+  }
+  resumeRun(): void {
+    if (!this.activeRunId) return;
+    this.orchestrationService
+      .resumeRun(this.activeRunId, "Resumed by administrator after review")
+      .subscribe({ error: (err) => (this.errorMessage = err.error?.message) });
+  }
+  safeStopRun(): void {
+    if (!this.activeRunId) return;
+    this.orchestrationService
+      .safeStopRun(this.activeRunId, "Safe stop requested from control panel")
+      .subscribe({ error: (err) => (this.errorMessage = err.error?.message) });
   }
   getAwaitingApprovalTasks(): TaskNode[] {
     return (
@@ -826,7 +848,13 @@ export class OrchestrationPanelComponent implements OnInit, OnDestroy {
   }
   get completedAndFailedTasks(): TaskNode[] {
     return this.allTasks.filter((t) =>
-      ["COMPLETED", "FAILED", "ROLLED_BACK", "SKIPPED"].includes(t.status),
+      [
+        "COMPLETED",
+        "FALLBACK_COMPLETED",
+        "FAILED",
+        "ROLLED_BACK",
+        "SKIPPED",
+      ].includes(t.status),
     );
   }
   canStartRun(): boolean {

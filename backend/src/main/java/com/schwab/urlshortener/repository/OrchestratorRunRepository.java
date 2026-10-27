@@ -1,6 +1,8 @@
 package com.schwab.urlshortener.repository;
 
 import com.schwab.urlshortener.entity.OrchestratorRun;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -14,4 +16,6 @@ public interface OrchestratorRunRepository extends JpaRepository<OrchestratorRun
   Page<OrchestratorRun> findAllByStatusOrderByCreatedAtDesc(String status, Pageable pageable);
 
   Page<OrchestratorRun> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+  List<OrchestratorRun> findAllByStatusIn(Collection<String> statuses);
 }

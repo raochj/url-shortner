@@ -2,12 +2,15 @@ package com.schwab.urlshortener.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.schwab.urlshortener.dto.request.ApprovalDecisionRequest;
+import com.schwab.urlshortener.dto.request.ReplanRequest;
+import com.schwab.urlshortener.dto.request.RunControlRequest;
 import com.schwab.urlshortener.dto.request.StartOrchestrationRequest;
 import com.schwab.urlshortener.dto.response.ApiResponse;
 import com.schwab.urlshortener.dto.response.OrchestrationRunResponse;
 import com.schwab.urlshortener.dto.response.OrchestrationRunSummaryResponse;
 import com.schwab.urlshortener.dto.response.ReliabilityMetricsResponse;
 import com.schwab.urlshortener.entity.OrchestratorTaskLog;
+import com.schwab.urlshortener.entity.OrchestrationAuditEvent;
 import com.schwab.urlshortener.orchestration.AgentOrchestrator;
 import com.schwab.urlshortener.orchestration.TaskNode;
 import com.schwab.urlshortener.orchestration.model.ReliabilityMetrics;
@@ -19,6 +22,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -134,7 +138,10 @@ public class OrchestrationController {
             m.failedTasks(),
             m.rolledBackTasks(),
             m.retryCount(),
+            m.fallbackCount(),
+            m.replanCount(),
             m.successRate(),
+            m.retryRate(),
             m.rollbackRate(),
             m.totalElapsedMs(),
             m.meanTimeToRecoverMs(),
@@ -154,6 +161,75 @@ public class OrchestrationController {
     List<OrchestratorTaskLog> logs =
         agentOrchestrator.getTaskLogs(runId, userDetails.getUsername(), isAdmin(userDetails));
     return ResponseEntity.ok(ApiResponse.ok(logs));
+  }
+
+  @GetMapping("/runs/{runId}/audit-events")
+  public ResponseEntity<ApiResponse<List<OrchestrationAuditEvent>>> getAuditEvents(
+      @PathVariable String runId, @AuthenticationPrincipal UserDetails userDetails) {
+    return ResponseEntity.ok(
+        ApiResponse.ok(
+            agentOrchestrator.getAuditEvents(
+                runId, userDetails.getUsername(), isAdmin(userDetails))));
+  }
+
+  @GetMapping("/runs/{runId}/audit-integrity")
+  public ResponseEntity<ApiResponse<Map<String, Boolean>>> verifyAuditIntegrity(
+      @PathVariable String runId, @AuthenticationPrincipal UserDetails userDetails) {
+    boolean valid =
+        agentOrchestrator.verifyAuditIntegrity(
+            runId, userDetails.getUsername(), isAdmin(userDetails));
+    return ResponseEntity.ok(ApiResponse.ok(Map.of("valid", valid)));
+  }
+
+  @PostMapping("/runs/{runId}/pause")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ResponseEntity<ApiResponse<Void>> pauseRun(
+      @PathVariable String runId,
+      @Valid @RequestBody RunControlRequest request,
+      @AuthenticationPrincipal UserDetails userDetails) {
+    agentOrchestrator.pauseRun(runId, userDetails.getUsername(), true, request.reason());
+    return ResponseEntity.ok(ApiResponse.ok(null, "Run paused at the next safe boundary"));
+  }
+
+  @PostMapping("/runs/{runId}/resume")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ResponseEntity<ApiResponse<Void>> resumeRun(
+      @PathVariable String runId,
+      @Valid @RequestBody RunControlRequest request,
+      @AuthenticationPrincipal UserDetails userDetails) {
+    agentOrchestrator.resumeRun(runId, userDetails.getUsername(), true, request.reason());
+    return ResponseEntity.ok(ApiResponse.ok(null, "Run resumed"));
+  }
+
+  @PostMapping("/runs/{runId}/safe-stop")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ResponseEntity<ApiResponse<Void>> safeStopRun(
+      @PathVariable String runId,
+      @Valid @RequestBody RunControlRequest request,
+      @AuthenticationPrincipal UserDetails userDetails) {
+    agentOrchestrator.safeStopRun(runId, userDetails.getUsername(), true, request.reason());
+    return ResponseEntity.accepted()
+        .body(ApiResponse.ok(null, "Safe stop requested; in-flight work will reach a boundary"));
+  }
+
+  @PostMapping("/runs/{runId}/replan")
+  @PreAuthorize("hasRole('ADMIN')")
+  public ResponseEntity<ApiResponse<Map<String, Object>>> replanRun(
+      @PathVariable String runId,
+      @Valid @RequestBody ReplanRequest request,
+      @AuthenticationPrincipal UserDetails userDetails) {
+    Set<String> invalidated =
+        agentOrchestrator.replanRun(
+            runId,
+            request.changedTaskId(),
+            request.revisedArtifacts(),
+            userDetails.getUsername(),
+            true,
+            request.reason());
+    return ResponseEntity.ok(
+        ApiResponse.ok(
+            Map.of("contextVersionChanged", true, "invalidatedTasks", invalidated),
+            "Governed re-plan applied; resume the run after review"));
   }
 
   // =========================================================================
@@ -259,7 +335,9 @@ public class OrchestrationController {
                     SseEmitter.event().name("run-update").data(json, MediaType.APPLICATION_JSON));
                 // Stop streaming when run has reached a terminal state
                 String status = state.status();
-                if ("COMPLETED".equals(status) || "FAILED".equals(status)) {
+                if ("COMPLETED".equals(status)
+                    || "FAILED".equals(status)
+                    || "CANCELLED".equals(status)) {
                   emitter.complete();
                   cancel.run();
                 }

@@ -11,11 +11,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 public class TaskGraph {
   private final Map<String, TaskNode> nodes = new ConcurrentHashMap<>();
   private final AtomicBoolean dynamicExpansionPending = new AtomicBoolean(false);
+  private final AtomicLong contextVersion = new AtomicLong(1);
   private final String graphId;
   private final String scenarioType;
 
@@ -44,8 +46,18 @@ public class TaskGraph {
     dynamicExpansionPending.set(pending);
   }
 
+  public long getContextVersion() {
+    return contextVersion.get();
+  }
+
+  public long incrementContextVersion() {
+    return contextVersion.incrementAndGet();
+  }
+
   public void addNode(TaskNode node) {
-    nodes.put(node.getId(), node);
+    if (nodes.putIfAbsent(node.getId(), node) != null) {
+      throw new IllegalArgumentException("Task already exists: " + node.getId());
+    }
   }
 
   /**
@@ -100,7 +112,11 @@ public class TaskGraph {
 
   public Set<String> getCompletedNodeIds() {
     return nodes.values().stream()
-        .filter(n -> n.getStatus() == TaskStatus.COMPLETED || n.getStatus() == TaskStatus.SKIPPED)
+        .filter(
+            n ->
+                n.getStatus() == TaskStatus.COMPLETED
+                    || n.getStatus() == TaskStatus.FALLBACK_COMPLETED
+                    || n.getStatus() == TaskStatus.SKIPPED)
         .map(TaskNode::getId)
         .collect(Collectors.toSet());
   }
@@ -111,6 +127,7 @@ public class TaskGraph {
             .allMatch(
                 n ->
                     n.getStatus() == TaskStatus.COMPLETED
+                        || n.getStatus() == TaskStatus.FALLBACK_COMPLETED
                         || n.getStatus() == TaskStatus.SKIPPED
                         || n.getStatus() == TaskStatus.FAILED
                         || n.getStatus() == TaskStatus.ROLLED_BACK);
@@ -156,10 +173,15 @@ public class TaskGraph {
             .retryPolicy(newNode.getRetryPolicy())
             .approvalGate(newNode.getApprovalGate())
             .guardrails(newNode.getGuardrails())
+            .entryGates(newNode.getEntryGates())
+            .exitGates(newNode.getExitGates())
+            .fallbackExecutor(newNode.getFallbackExecutor())
+            .executionTimeout(newNode.getExecutionTimeout())
             .build();
     nodes.put(merged.getId(), merged);
     try {
       validate();
+      incrementContextVersion();
     } catch (RuntimeException ex) {
       nodes.remove(merged.getId(), merged);
       throw ex;
@@ -174,11 +196,65 @@ public class TaskGraph {
     }
   }
 
+  /** Returns a stable dependency-first order suitable for execution and reverse compensation. */
+  public List<TaskNode> topologicalOrder() {
+    Map<String, Integer> remaining = new HashMap<>();
+    nodes.values().forEach(node -> remaining.put(node.getId(), node.getDependencyIds().size()));
+    java.util.PriorityQueue<String> ready = new java.util.PriorityQueue<>();
+    remaining.forEach((id, count) -> { if (count == 0) ready.add(id); });
+    List<TaskNode> ordered = new ArrayList<>();
+    while (!ready.isEmpty()) {
+      String id = ready.remove();
+      ordered.add(nodes.get(id));
+      for (TaskNode candidate : nodes.values()) {
+        if (candidate.getDependencyIds().contains(id)) {
+          int count = remaining.computeIfPresent(candidate.getId(), (key, value) -> value - 1);
+          if (count == 0) ready.add(candidate.getId());
+        }
+      }
+    }
+    if (ordered.size() != nodes.size()) throw new IllegalStateException("Cannot order invalid graph");
+    return ordered;
+  }
+
+  public Set<String> descendantsOf(String nodeId) {
+    if (!nodes.containsKey(nodeId)) throw new IllegalArgumentException("Unknown task: " + nodeId);
+    Set<String> descendants = ConcurrentHashMap.newKeySet();
+    boolean changed;
+    do {
+      changed = false;
+      for (TaskNode node : nodes.values()) {
+        if (!node.getId().equals(nodeId)
+            && node.getDependencyIds().stream()
+                .anyMatch(dep -> dep.equals(nodeId) || descendants.contains(dep))) {
+          changed |= descendants.add(node.getId());
+        }
+      }
+    } while (changed);
+    return Set.copyOf(descendants);
+  }
+
+  /** Invalidates derived work after an upstream decision changes. */
+  public synchronized Set<String> invalidateDescendants(String nodeId) {
+    Set<String> descendants = descendantsOf(nodeId);
+    for (String descendantId : descendants) {
+      TaskNode node = nodes.get(descendantId);
+      if (node.getStatus() == TaskStatus.IN_PROGRESS) {
+        throw new IllegalStateException(
+            "Cannot re-plan while descendant task is running: " + descendantId);
+      }
+    }
+    descendants.forEach(id -> nodes.get(id).resetForReplan());
+    incrementContextVersion();
+    return descendants;
+  }
+
   /** Returns a serializable map representation for JSON storage (dag_snapshot). */
   public Map<String, Object> serialize() {
     Map<String, Object> snapshot = new LinkedHashMap<>();
     snapshot.put("graphId", graphId);
     snapshot.put("scenarioType", scenarioType);
+    snapshot.put("contextVersion", contextVersion.get());
     List<Map<String, Object>> nodeList = new ArrayList<>();
     for (TaskNode node : nodes.values()) {
       Map<String, Object> n = new LinkedHashMap<>();
@@ -189,6 +265,9 @@ public class TaskGraph {
       n.put("status", node.getStatus().name());
       n.put("dependencies", node.getDependencyIds());
       n.put("attemptCount", node.getAttemptCount());
+      n.put("entryGates", node.getEntryGates());
+      n.put("exitGates", node.getExitGates());
+      n.put("executionTimeoutMs", node.getExecutionTimeout().toMillis());
       if (node.getLastResult() != null) {
         n.put("artifacts", node.getLastResult().artifacts());
       }
@@ -225,6 +304,8 @@ public class TaskGraph {
         vizNode.put("y", y);
         vizNode.put("attemptCount", node.getAttemptCount());
         vizNode.put("requiresApproval", node.getApprovalGate().required());
+        vizNode.put("entryGates", node.getEntryGates());
+        vizNode.put("exitGates", node.getExitGates());
         vizNodes.add(vizNode);
       }
     }
@@ -240,6 +321,7 @@ public class TaskGraph {
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("nodes", vizNodes);
     result.put("edges", edges);
+    result.put("contextVersion", contextVersion.get());
     return result;
   }
 }

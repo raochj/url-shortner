@@ -224,8 +224,32 @@
             </span>
           </div>
           <div *ngIf="activeRun?.tasks" class="run-timing">
-            {{ activeRun!.tasks.filter(t => t.status === 'COMPLETED').length }}
+            Context v{{ activeRun!.contextVersion }} ·
+            {{ activeRun!.tasks.filter(t => t.status === 'COMPLETED' || t.status === 'FALLBACK_COMPLETED').length }}
             / {{ activeRun!.tasks.length }} tasks complete
+          </div>
+          <div *ngIf="isAdmin() && activeRun" class="run-controls">
+            <button
+              *ngIf="activeRun.status === 'RUNNING'"
+              class="btn-reject"
+              (click)="pauseRun()"
+            >
+              Pause
+            </button>
+            <button
+              *ngIf="activeRun.status === 'PAUSED'"
+              class="btn-approve"
+              (click)="resumeRun()"
+            >
+              Resume
+            </button>
+            <button
+              *ngIf="activeRun.status === 'RUNNING' || activeRun.status === 'PAUSED'"
+              class="btn-reject"
+              (click)="safeStopRun()"
+            >
+              Safe stop
+            </button>
           </div>
         </div>
         <!-- Loading State (no run data yet) -->

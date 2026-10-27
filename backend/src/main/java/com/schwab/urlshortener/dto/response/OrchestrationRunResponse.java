@@ -8,6 +8,7 @@ public record OrchestrationRunResponse(
     String runId,
     String scenarioType,
     String status,
+    long contextVersion,
     List<TaskNodeResponse> tasks,
     Map<String, Object> parameters,
     OffsetDateTime startedAt,

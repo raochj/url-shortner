@@ -80,7 +80,19 @@
       <div class="metric-item" [class.warning]="metrics.retryCount > 0">
         <div class="metric-label">Retries</div>
         <div class="metric-value">{{ metrics.retryCount }}</div>
-        <div class="metric-sub">bounded retry attempts</div>
+        <div class="metric-sub">
+          {{ metrics.retryRate | number: "1.0-1" }}% retry frequency
+        </div>
+      </div>
+      <div class="metric-item" [class.warning]="metrics.fallbackCount > 0">
+        <div class="metric-label">Fallbacks</div>
+        <div class="metric-value">{{ metrics.fallbackCount }}</div>
+        <div class="metric-sub">degraded paths used</div>
+      </div>
+      <div class="metric-item" [class.warning]="metrics.replanCount > 0">
+        <div class="metric-label">Re-plans</div>
+        <div class="metric-value">{{ metrics.replanCount }}</div>
+        <div class="metric-sub">governed context revisions</div>
       </div>
       <!-- Rollback Rate -->
       <div class="metric-item" [class.warning]="metrics.rollbackRate > 0">

@@ -13,8 +13,12 @@ public record TaskNodeResponse(
     List<String> dependencies,
     String errorDetail,
     boolean requiresApproval,
-    String approvalPrompt) {
+    String approvalPrompt,
+    List<String> entryGates,
+    List<String> exitGates) {
   public TaskNodeResponse {
     dependencies = List.copyOf(dependencies);
+    entryGates = List.copyOf(entryGates);
+    exitGates = List.copyOf(exitGates);
   }
 }

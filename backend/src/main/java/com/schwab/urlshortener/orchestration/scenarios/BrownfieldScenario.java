@@ -2,9 +2,13 @@ package com.schwab.urlshortener.orchestration.scenarios;
 
 import com.schwab.urlshortener.orchestration.TaskGraph;
 import com.schwab.urlshortener.orchestration.TaskNode;
+import com.schwab.urlshortener.orchestration.analysis.CodebaseImpactAnalyzer;
+import com.schwab.urlshortener.orchestration.analysis.CodebaseImpactReport;
 import com.schwab.urlshortener.orchestration.guardrails.CompliancePolicyGuardrail;
+import com.schwab.urlshortener.orchestration.guardrails.ChangeControlPolicyGuardrail;
 import com.schwab.urlshortener.orchestration.guardrails.SecurityPolicyGuardrail;
 import com.schwab.urlshortener.orchestration.model.ApprovalGate;
+import com.schwab.urlshortener.orchestration.model.ExecutionGate;
 import com.schwab.urlshortener.orchestration.model.RetryPolicy;
 import com.schwab.urlshortener.orchestration.model.TaskResult;
 import com.schwab.urlshortener.orchestration.model.TaskStage;
@@ -29,11 +33,20 @@ import org.springframework.stereotype.Component;
 public class BrownfieldScenario {
   private final SecurityPolicyGuardrail securityPolicyGuardrail;
   private final CompliancePolicyGuardrail compliancePolicyGuardrail;
+  private final ChangeControlPolicyGuardrail changeControlPolicyGuardrail;
+  private final CodebaseImpactAnalyzer codebaseImpactAnalyzer;
 
   @Value("${app.orchestration.demo-task-duration-ms:2000}")
   private long baseDurationMs;
 
   public TaskGraph buildGraph(Map<String, Object> parameters) {
+    String changeIntent =
+        String.valueOf(
+            parameters == null
+                ? "Add governed QR-code generation to the existing URL shortener"
+                : parameters.getOrDefault(
+                    "changeRequest",
+                    "Add governed QR-code generation to the existing URL shortener"));
     String graphId = "brownfield-" + UUID.randomUUID();
     TaskGraph graph = new TaskGraph(graphId, "BROWNFIELD");
     // ---- REQUIREMENTS ---------------------------------------------------
@@ -47,17 +60,15 @@ public class BrownfieldScenario {
             .retryPolicy(RetryPolicy.defaultPolicy())
             .executor(
                 () -> {
-                  sleep((long) (baseDurationMs * 0.5));
+                  CodebaseImpactReport report = codebaseImpactAnalyzer.analyze(changeIntent);
                   return TaskResult.success(
                       "REQ-B-001",
                       "Impact analysis complete",
                       Map.of(
-                          "impactedComponents",
-                          3,
-                          "riskLevel",
-                          "LOW",
-                          "report",
-                          "impact-analysis.md"),
+                          "impact-report", report.asArtifact(),
+                          "impact-report-markdown", report.markdown(),
+                          "impacted-modules", report.impactedModules(),
+                          "affected-tests", report.affectedTests()),
                       Instant.now(),
                       Instant.now(),
                       1);
@@ -72,6 +83,13 @@ public class BrownfieldScenario {
                 "Design the QrCodeService interface, ZXing integration, and caching strategy")
             .stage(TaskStage.DESIGN)
             .dependsOn("REQ-B-001")
+            .entryGate(
+                ExecutionGate.requires(
+                    "IMPACT-EVIDENCE",
+                    "Repository-derived impact analysis is available",
+                    "impact-report",
+                    "impacted-modules",
+                    "affected-tests"))
             .retryPolicy(RetryPolicy.defaultPolicy())
             .guardrail(securityPolicyGuardrail)
             .executor(
@@ -80,7 +98,10 @@ public class BrownfieldScenario {
                   return TaskResult.success(
                       "DESIGN-B-001",
                       "QR code service design complete",
-                      Map.of("design-doc", "qr-service-design.md", "library", "ZXing 3.5.3"),
+                      Map.of(
+                          "design-doc", qrDesignDocument(),
+                          "library", "ZXing 3.5.3",
+                          "decision-record", "Use a bounded service adapter; preserve URL resolution as the policy boundary"),
                       Instant.now(),
                       Instant.now(),
                       1);
@@ -100,6 +121,15 @@ public class BrownfieldScenario {
             .retryPolicy(
                 new RetryPolicy(
                     3, java.time.Duration.ofMillis(500), 2.0, java.time.Duration.ofSeconds(10)))
+            .fallbackExecutor(
+                () ->
+                    TaskResult.success(
+                        "IMPL-B-001",
+                        "Fallback adapter enabled using server-side QR rendering",
+                        Map.of("fallback", true, "adapter", "server-rendered-svg"),
+                        Instant.now(),
+                        Instant.now(),
+                        3))
             .executor(
                 () -> {
                   int attempt = implB001Attempts.incrementAndGet();
@@ -184,7 +214,11 @@ public class BrownfieldScenario {
                   return TaskResult.success(
                       "TEST-B-001",
                       "Regression suite passed — no regressions detected",
-                      Map.of("totalTests", 48, "passed", 48, "regressions", 0),
+                      Map.of(
+                          "totalTests", 48,
+                          "passed", 48,
+                          "regressions", 0,
+                          "security-scan", "PASSED"),
                       Instant.now(),
                       Instant.now(),
                       1);
@@ -228,7 +262,7 @@ public class BrownfieldScenario {
                   return TaskResult.success(
                       "DOC-B-001",
                       "OpenAPI spec updated with QR code endpoint",
-                      Map.of("api-spec", "openapi-v2.yaml", "newEndpoints", 1),
+                      Map.of("api-spec", qrOpenApiFragment(), "newEndpoints", 1),
                       Instant.now(),
                       Instant.now(),
                       1);
@@ -245,6 +279,19 @@ public class BrownfieldScenario {
             .approvalGate(
                 ApprovalGate.adminRequired(
                     "Approve QR feature release: blue-green deployment to production"))
+            .entryGate(
+                ExecutionGate.requires(
+                    "PRODUCTION-READINESS",
+                    "Test, security, and documentation evidence present",
+                    "testing-completed",
+                    "security-scan",
+                    "api-spec"))
+            .exitGate(
+                ExecutionGate.requires(
+                    "CUTOVER-EVIDENCE", "Blue-green cutover evidence produced", "strategy"))
+            .guardrail(securityPolicyGuardrail)
+            .guardrail(compliancePolicyGuardrail)
+            .guardrail(changeControlPolicyGuardrail)
             .retryPolicy(RetryPolicy.defaultPolicy())
             .rollbackHandler(
                 result -> {
@@ -284,5 +331,37 @@ public class BrownfieldScenario {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
+  }
+
+  private String qrDesignDocument() {
+    return """
+        # QR code service design
+
+        - `QrCodeService.render(shortCode, size)` accepts a validated 64-512px size.
+        - The controller resolves the short code through the existing URL policy service first.
+        - Output is `image/png` with ETag and bounded cache headers; redirect analytics is untouched.
+        - ZXing is isolated behind the service interface for fallback and dependency replacement.
+        - Invalid, expired, or unauthorized mappings reuse existing error semantics.
+        - Release requires regression, security, dependency-license, and rollback evidence.
+        """;
+  }
+
+  private String qrOpenApiFragment() {
+    return """
+        /qr/{shortCode}:
+          get:
+            summary: Render a QR code for an active short URL
+            parameters:
+              - in: path
+                name: shortCode
+                required: true
+                schema: { type: string, pattern: '^[A-Za-z0-9]{4,10}$' }
+            responses:
+              '200':
+                description: PNG QR code
+                content:
+                  image/png: { schema: { type: string, format: binary } }
+              '404': { description: Unknown or expired short code }
+        """;
   }
 }

@@ -7,6 +7,8 @@ A runnable full-stack assessment prototype with two connected concerns:
 
 The scenario tasks produce reviewable simulated engineering artifacts; they do not call an external LLM or modify this repository. That boundary keeps the demo deterministic while making autonomy, governance, retries, approvals, lineage, and metrics visible.
 
+The brownfield impact-analysis task is not a placeholder: it performs a bounded read-only source scan when the configured codebase is available, indexes symbol references, API annotations and schema evidence, and emits both structured evidence and a complete Markdown impact report. Subsequent design and OpenAPI tasks emit their full artifact contents.
+
 ## Architecture at a glance
 
 ```text
@@ -19,7 +21,7 @@ Browser -> nginx/Angular -> Spring Boot API -> PostgreSQL
                               `-- SSE state/metric updates
 ```
 
-The orchestrator stores run metadata, task audit logs, approval decisions, final metrics, and the final DAG snapshot in PostgreSQL. The live executable graph is held in one backend process. Independent ready nodes run in parallel through a bounded `ThreadPoolTaskExecutor`; stages synchronize through dependencies and stage-entry checks.
+The orchestrator stores run metadata, every task attempt, approval decisions, transition checkpoints, metrics, and a canonical hash-chained audit journal in PostgreSQL. PostgreSQL advisory locks serialize audit writers per run. The live executable graph is held in one backend process; a restart fails orphaned active runs closed with audit evidence instead of leaving them falsely active. Independent ready nodes run in parallel through a bounded `ThreadPoolTaskExecutor`; explicit dependencies and entry/exit evidence gates synchronize only the paths that require it.
 
 ## Technology
 
@@ -108,7 +110,8 @@ All protected requests use `Authorization: Bearer <token>`.
 | Redirect | `GET /{shortCode}` (public) |
 | Analytics | `GET /api/v1/analytics/{shortCode}/summary`, `GET /api/v1/analytics/{shortCode}/timeseries` |
 | Orchestration | scenario catalogue, run start/list/state, DAG, metrics, logs, SSE events |
-| Governance | `POST /api/v1/orchestration/runs/{runId}/approve/{taskId}`, `POST .../{runId}/inject` (ADMIN) |
+| Governance | approve/reject, inject, pause, resume, safe-stop, and governed re-plan endpoints (ADMIN) |
+| Audit | `GET /api/v1/orchestration/runs/{runId}/audit-events` (owner or ADMIN) |
 
 The approval request body is `{"approved":true|false,"comment":"..."}`; the same endpoint handles approve and reject decisions.
 
@@ -117,6 +120,8 @@ The approval request body is `{"approved":true|false,"comment":"..."}`; the same
 - **Greenfield:** 12 tasks across requirements, design, implementation, testing, documentation, and release. Design and release require human approval; implementation branches execute in parallel.
 - **Brownfield:** 9 tasks model a QR-code enhancement. Impact analysis feeds design, three implementation branches converge on testing, one implementation task fails once and succeeds on bounded retry, and release requires approval.
 - **Ambiguous:** begins with only `CLARIFY-001`. Its structured result dynamically adds two parallel implementation tasks, a benchmark, and documentation while the run remains under the same scheduler and guardrails.
+
+Every graph exposes explicit entry/exit evidence gates and a context version. Administrators can pause a live run, submit a reasoned revision to an upstream task, inspect the affected descendant set and revoked approvals, and resume only after review. Lifecycle decisions are written to a per-run SHA-256 hash-chained audit journal.
 
 ## Verification
 

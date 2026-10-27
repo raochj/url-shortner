@@ -289,6 +289,8 @@ export class DagViewerComponent implements OnChanges {
   }
   getNodeColor(status: TaskStatus): string {
     const map: Record<TaskStatus, string> = {
+      FALLBACK_COMPLETED: "#2E7D32",
+      STALE: "#FFF8E1",
       COMPLETED: "#003057",
       IN_PROGRESS: "#E1F5FE",
       AWAITING_APPROVAL: "#FFF3E0",
@@ -302,6 +304,8 @@ export class DagViewerComponent implements OnChanges {
   }
   getNodeBorderColor(status: TaskStatus): string {
     const map: Record<TaskStatus, string> = {
+      FALLBACK_COMPLETED: "#1B5E20",
+      STALE: "#F9A825",
       COMPLETED: "#001e3c",
       IN_PROGRESS: "#0277BD",
       AWAITING_APPROVAL: "#E65100",
@@ -315,6 +319,8 @@ export class DagViewerComponent implements OnChanges {
   }
   getNodeTextColor(status: TaskStatus): string {
     const map: Record<TaskStatus, string> = {
+      FALLBACK_COMPLETED: "#FFFFFF",
+      STALE: "#8D6E00",
       COMPLETED: "#FFFFFF",
       IN_PROGRESS: "#01579B",
       AWAITING_APPROVAL: "#E65100",
@@ -328,6 +334,8 @@ export class DagViewerComponent implements OnChanges {
   }
   getStatusIcon(status: TaskStatus): string {
     const map: Record<TaskStatus, string> = {
+      FALLBACK_COMPLETED: "F",
+      STALE: "!",
       COMPLETED: "✓",
       IN_PROGRESS: "⟳",
       AWAITING_APPROVAL: "⏸",
